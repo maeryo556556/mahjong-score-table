@@ -135,6 +135,47 @@ export const finishGame = (gameId: number) => {
   db.runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
 };
 
+// ゲームをIDで取得
+export const getGameById = (gameId: number) => {
+  const result = db.getFirstSync<{ id: number; player_count: number; start_date: string; finished: number }>(
+    'SELECT id, player_count, start_date, finished FROM games WHERE id = ?',
+    [gameId]
+  );
+  return result;
+};
+
+// 終了済みゲーム一覧取得
+export const getFinishedGames = () => {
+  const games = db.getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
+    'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
+  );
+  return games.map(game => {
+    const players = db.getAllSync<{ player_name: string }>(
+      'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
+      [game.id]
+    );
+    const hanchanCount = db.getFirstSync<{ count: number }>(
+      'SELECT COUNT(DISTINCT hanchan) as count FROM scores WHERE game_id = ?',
+      [game.id]
+    );
+    return {
+      ...game,
+      playerNames: players.map(p => p.player_name),
+      hanchanCount: hanchanCount?.count || 0,
+    };
+  });
+};
+
+// ゲーム削除
+export const deleteGame = (gameId: number) => {
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM chips WHERE game_id = ?', [gameId]);
+    db.runSync('DELETE FROM scores WHERE game_id = ?', [gameId]);
+    db.runSync('DELETE FROM game_players WHERE game_id = ?', [gameId]);
+    db.runSync('DELETE FROM games WHERE id = ?', [gameId]);
+  });
+};
+
 // プレイヤー名取得
 export const getPlayerNames = (gameId: number) => {
   const result = db.getAllSync<{ player_name: string }>(

@@ -10,20 +10,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getCurrentGame, clearAllData } from '../database';
+import { createGame, getFinishedGames, clearAllData } from '../database';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
+  onViewPastGames: () => void;
 }
 
-export default function SetupScreen({ onStartGame }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
-  const [hasSavedGame, setHasSavedGame] = useState(false);
+  const [hasPastGames, setHasPastGames] = useState(false);
 
   useEffect(() => {
-    const game = getCurrentGame();
-    setHasSavedGame(!!game);
+    const games = getFinishedGames();
+    setHasPastGames(games.length > 0);
   }, []);
 
   const handlePlayerCountChange = (count: number) => {
@@ -53,13 +54,6 @@ export default function SetupScreen({ onStartGame }: SetupScreenProps) {
     onStartGame(gameId);
   };
 
-  const handleViewPastGame = () => {
-    const game = getCurrentGame();
-    if (game) {
-      onStartGame(game.id);
-    }
-  };
-
   const handleClearData = () => {
     Alert.alert(
       'データ削除',
@@ -71,7 +65,7 @@ export default function SetupScreen({ onStartGame }: SetupScreenProps) {
           style: 'destructive',
           onPress: () => {
             clearAllData();
-            setHasSavedGame(false);
+            setHasPastGames(false);
             Alert.alert('完了', 'データをクリアしました');
           },
         },
@@ -141,10 +135,10 @@ export default function SetupScreen({ onStartGame }: SetupScreenProps) {
               <Text style={styles.startButtonText}>ゲーム開始</Text>
             </TouchableOpacity>
 
-            {hasSavedGame && (
+            {hasPastGames && (
               <TouchableOpacity
                 style={[styles.startButton, styles.secondaryButton]}
-                onPress={handleViewPastGame}
+                onPress={onViewPastGames}
               >
                 <Text style={styles.startButtonText}>過去のゲームを見る</Text>
               </TouchableOpacity>
