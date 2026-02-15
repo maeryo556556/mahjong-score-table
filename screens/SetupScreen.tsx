@@ -112,6 +112,7 @@ export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScree
 
             {/* プレイヤー名入力 */}
             <Text style={styles.label}>プレイヤー設定</Text>
+            <Text style={styles.hintText}>※ 4文字以内で入力してください</Text>
             <View style={styles.playerInputs}>
               {playerNames.slice(0, playerCount).map((name, index) => (
                 <View key={index} style={styles.inputGroup}>
@@ -210,6 +211,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1e3c72',
     marginBottom: 8,
+  },
+  hintText: {
+    fontSize: 11,
+    color: '#999',
+    marginBottom: 6,
   },
   typeButtons: {
     flexDirection: 'row',

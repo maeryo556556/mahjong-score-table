@@ -21,6 +21,7 @@ import {
   deleteChip,
   getGameById,
   finishGame,
+  deleteGame,
 } from '../database';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
@@ -125,6 +126,7 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
     setCurrentHanchan(currentHanchan + 1);
     setScoreValues(new Array(players.length).fill(0));
     refreshHistory();
+    Alert.alert('完了', `第${currentHanchan}半荘のスコアを記録しました`);
   };
 
   const handleRecordChip = () => {
@@ -195,7 +197,12 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
   };
 
   const confirmFinishGame = () => {
-    finishGame(gameId);
+    // 記録がない場合はゲームデータ自体を削除
+    if (scoreHistory.length === 0 && chipHistory.length === 0) {
+      deleteGame(gameId);
+    } else {
+      finishGame(gameId);
+    }
     setShowFinishModal(false);
     onFinish();
   };
