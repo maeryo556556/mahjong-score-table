@@ -166,6 +166,28 @@ export const getFinishedGames = () => {
   });
 };
 
+// 中断中（未終了）ゲーム一覧取得
+export const getUnfinishedGames = () => {
+  const games = db.getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
+    'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 0 ORDER BY created_at DESC'
+  );
+  return games.map(game => {
+    const players = db.getAllSync<{ player_name: string }>(
+      'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
+      [game.id]
+    );
+    const hanchanCount = db.getFirstSync<{ count: number }>(
+      'SELECT COUNT(DISTINCT hanchan) as count FROM scores WHERE game_id = ?',
+      [game.id]
+    );
+    return {
+      ...game,
+      playerNames: players.map(p => p.player_name),
+      hanchanCount: hanchanCount?.count || 0,
+    };
+  });
+};
+
 // ゲーム削除
 export const deleteGame = (gameId: number) => {
   db.withTransactionSync(() => {

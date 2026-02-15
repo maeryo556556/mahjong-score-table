@@ -31,10 +31,11 @@ import FinishGameModal from '../components/FinishGameModal';
 interface GameScreenProps {
   gameId: number;
   onFinish: () => void;
+  onSuspend?: () => void;
   readOnly?: boolean;
 }
 
-export default function GameScreen({ gameId, onFinish, readOnly = false }: GameScreenProps) {
+export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = false }: GameScreenProps) {
   const [players, setPlayers] = useState<string[]>([]);
   const [playerCount, setPlayerCount] = useState(4);
   const [currentHanchan, setCurrentHanchan] = useState(1);
@@ -192,6 +193,17 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
     );
   };
 
+  const handleSuspendGame = () => {
+    Alert.alert(
+      '確認',
+      'ゲームを中断しますか？\nセットアップ画面から再開できます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '中断する', onPress: () => onSuspend?.() },
+      ]
+    );
+  };
+
   const handleFinishGame = () => {
     setShowFinishModal(true);
   };
@@ -224,9 +236,16 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
             ) : (
               <>
                 <Text style={styles.headerTitle}>第{currentHanchan}半荘</Text>
-                <TouchableOpacity style={styles.finishButton} onPress={handleFinishGame}>
-                  <Text style={styles.finishButtonText}>ゲーム終了</Text>
-                </TouchableOpacity>
+                <View style={styles.headerButtons}>
+                  {onSuspend && (
+                    <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
+                      <Text style={styles.suspendButtonText}>中断</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.finishButton} onPress={handleFinishGame}>
+                    <Text style={styles.finishButtonText}>ゲーム終了</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </View>
@@ -345,6 +364,22 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 70,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  suspendButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  suspendButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   finishButton: {
     backgroundColor: '#dc3545',

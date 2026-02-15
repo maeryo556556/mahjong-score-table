@@ -71,6 +71,8 @@ export default function HistoryTable({
 
   allRecords.sort((a, b) => b.timestamp - a.timestamp);
 
+  const editable = !!(onDeleteScore || onDeleteChip);
+
   const getRankBadgeColor = (rank: number) => {
     switch (rank) {
       case 1: return '#FFD700';
@@ -79,6 +81,9 @@ export default function HistoryTable({
       default: return '#95a5a6';
     }
   };
+
+  const ScoreRow = editable ? TouchableOpacity : View;
+  const ChipRow = editable ? TouchableOpacity : View;
 
   return (
     <View style={styles.card}>
@@ -90,11 +95,13 @@ export default function HistoryTable({
         if (record.type === 'score') {
           const { hanchan, scores, formattedTime } = record.data;
           return (
-            <TouchableOpacity
+            <ScoreRow
               key={`score-${index}`}
               style={styles.historyRow}
-              onLongPress={onDeleteScore ? () => onDeleteScore(hanchan) : undefined}
-              delayLongPress={800}
+              {...(onDeleteScore && {
+                onLongPress: () => onDeleteScore(hanchan),
+                delayLongPress: 800,
+              })}
             >
               <View style={styles.historyHeader}>
                 <Text style={styles.hanchanText}>第{hanchan}半荘</Text>
@@ -122,16 +129,18 @@ export default function HistoryTable({
                   );
                 })}
               </View>
-            </TouchableOpacity>
+            </ScoreRow>
           );
         } else {
           const { chips, formatted_time } = record.data;
           return (
-            <TouchableOpacity
+            <ChipRow
               key={`chip-${index}`}
               style={[styles.historyRow, styles.chipRow]}
-              onLongPress={onDeleteChip ? () => onDeleteChip(chips.map((c: any) => c.id)) : undefined}
-              delayLongPress={800}
+              {...(onDeleteChip && {
+                onLongPress: () => onDeleteChip(chips.map((c: any) => c.id)),
+                delayLongPress: 800,
+              })}
             >
               <View style={styles.historyHeader}>
                 <Text style={[styles.hanchanText, styles.chipText]}>💰 チップ</Text>
@@ -158,7 +167,7 @@ export default function HistoryTable({
                   );
                 })}
               </View>
-            </TouchableOpacity>
+            </ChipRow>
           );
         }
       })}
