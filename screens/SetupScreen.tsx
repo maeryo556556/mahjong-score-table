@@ -125,7 +125,6 @@ export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScree
                       setPlayerNames(newNames);
                     }}
                     placeholder="名前を入力"
-                    maxLength={4}
                   />
                 </View>
               ))}

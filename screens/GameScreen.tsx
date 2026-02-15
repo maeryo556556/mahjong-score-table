@@ -281,8 +281,10 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
             scoreHistory={scoreHistory}
             chipHistory={chipHistory}
             gameStartDate={gameStartDate}
-            onDeleteScore={handleDeleteScore}
-            onDeleteChip={handleDeleteChip}
+            {...(!readOnly && {
+              onDeleteScore: handleDeleteScore,
+              onDeleteChip: handleDeleteChip,
+            })}
           />
         </ScrollView>
 

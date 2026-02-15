@@ -6,8 +6,8 @@ interface HistoryTableProps {
   scoreHistory: any[];
   chipHistory: any[];
   gameStartDate: string;
-  onDeleteScore: (hanchan: number) => void;
-  onDeleteChip: (chipIds: number[]) => void;
+  onDeleteScore?: (hanchan: number) => void;
+  onDeleteChip?: (chipIds: number[]) => void;
 }
 
 export default function HistoryTable({
@@ -90,7 +90,7 @@ export default function HistoryTable({
             <TouchableOpacity
               key={`score-${index}`}
               style={styles.historyRow}
-              onLongPress={() => onDeleteScore(hanchan)}
+              onLongPress={onDeleteScore ? () => onDeleteScore(hanchan) : undefined}
               delayLongPress={800}
             >
               <View style={styles.historyHeader}>
@@ -127,7 +127,7 @@ export default function HistoryTable({
             <TouchableOpacity
               key={`chip-${index}`}
               style={[styles.historyRow, styles.chipRow]}
-              onLongPress={() => onDeleteChip(chips.map((c: any) => c.id))}
+              onLongPress={onDeleteChip ? () => onDeleteChip(chips.map((c: any) => c.id)) : undefined}
               delayLongPress={800}
             >
               <View style={styles.historyHeader}>
