@@ -1,6 +1,6 @@
-# 麻雀得点記録システム - React Native版
+# 麻雀スコアシート
 
-Web版の麻雀得点記録システムをReact Nativeで実装したモバイルアプリです。
+麻雀スコアシートのデジタル版モバイルアプリです。
 
 ## 主な機能
 
@@ -31,7 +31,7 @@ Web版の麻雀得点記録システムをReact Nativeで実装したモバイ�
 
 ```bash
 # プロジェクトディレクトリに移動
-cd mahjong-rn
+cd mahjong-score-table
 
 # 依存パッケージのインストール
 npm install
@@ -147,17 +147,6 @@ mahjong-rn/
 - 全員0点の場合は記録不可
 - 合計が±0でない場合は記録不可
 - 範囲: -200 〜 +200
-
-## Web版との違い
-
-| 項目 | Web版 | React Native版 |
-|-----|------|---------------|
-| データ保存 | localStorage | SQLite |
-| UI | HTML/CSS | React Native Components |
-| ナビゲーション | 画面切り替え | 画面遷移 |
-| モーダル | カスタムHTML | React Native Modal |
-| 長押し | mousedown/touchstart | onLongPress |
-| スタイリング | CSS | StyleSheet |
 
 ## ビルド
 
