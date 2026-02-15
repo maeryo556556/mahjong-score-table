@@ -83,6 +83,9 @@ export default function HistoryTable({
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>記録履歴（{gameStartDate}）</Text>
+      {onDeleteScore && (
+        <Text style={styles.hintText}>※ 長押しで記録を削除できます</Text>
+      )}
       {allRecords.map((record, index) => {
         if (record.type === 'score') {
           const { hanchan, scores, formattedTime } = record.data;
@@ -179,10 +182,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1e3c72',
-    marginBottom: 12,
+    marginBottom: 4,
     borderBottomWidth: 2,
     borderBottomColor: '#2a5298',
     paddingBottom: 6,
+  },
+  hintText: {
+    fontSize: 11,
+    color: '#999',
+    marginBottom: 10,
   },
   historyRow: {
     backgroundColor: '#f8f9fa',

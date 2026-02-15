@@ -228,7 +228,7 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
             <>
               {/* ポイント入力 */}
               <View style={styles.card}>
-                <Text style={styles.sectionTitle}>ポイント入力</Text>
+                <Text style={styles.sectionTitle}>🀄 ポイント入力</Text>
                 <View style={styles.inputGrid}>
                   {players.map((player, index) => (
                     <DrumRollInput
@@ -239,7 +239,7 @@ export default function GameScreen({ gameId, onFinish, readOnly = false }: GameS
                     />
                   ))}
                 </View>
-                <TouchableOpacity style={styles.recordButton} onPress={handleRecordScore}>
+                <TouchableOpacity style={[styles.recordButton, styles.scoreButton]} onPress={handleRecordScore}>
                   <Text style={styles.recordButtonText}>スコアを記録</Text>
                 </TouchableOpacity>
               </View>
@@ -380,6 +380,9 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
     marginTop: 12,
+  },
+  scoreButton: {
+    backgroundColor: '#28a745',
   },
   chipButton: {
     backgroundColor: '#ffc107',
