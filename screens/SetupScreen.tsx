@@ -10,21 +10,24 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, clearAllData } from '../database';
+import { createGame, getFinishedGames, getUnfinishedGames, clearAllData } from '../database';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
+  onResumeGame: (gameId: number) => void;
   onViewPastGames: () => void;
 }
 
-export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
+  const [suspendedGames, setSuspendedGames] = useState<ReturnType<typeof getUnfinishedGames>>([]);
 
   useEffect(() => {
-    const games = getFinishedGames();
-    setHasPastGames(games.length > 0);
+    const finished = getFinishedGames();
+    setHasPastGames(finished.length > 0);
+    setSuspendedGames(getUnfinishedGames());
   }, []);
 
   const handlePlayerCountChange = (count: number) => {
@@ -66,6 +69,7 @@ export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScree
           onPress: () => {
             clearAllData();
             setHasPastGames(false);
+            setSuspendedGames([]);
             Alert.alert('完了', 'データをクリアしました');
           },
         },
@@ -81,6 +85,35 @@ export default function SetupScreen({ onStartGame, onViewPastGames }: SetupScree
             <Text style={styles.title}>🀄 麻雀</Text>
             <Text style={styles.subtitle}>得点記録システム</Text>
           </View>
+
+          {suspendedGames.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>中断中のゲーム</Text>
+              {suspendedGames.map(game => (
+                <TouchableOpacity
+                  key={game.id}
+                  style={styles.suspendedGameCard}
+                  onPress={() => onResumeGame(game.id)}
+                >
+                  <View style={styles.suspendedGameHeader}>
+                    <Text style={styles.suspendedGameDate}>{game.start_date}</Text>
+                    <Text style={styles.suspendedGameType}>
+                      {game.player_count === 3 ? '3人麻雀' : '4人麻雀'}
+                    </Text>
+                  </View>
+                  <Text style={styles.suspendedGamePlayers}>
+                    {game.playerNames.join(' / ')}
+                  </Text>
+                  <View style={styles.suspendedGameFooter}>
+                    <Text style={styles.suspendedGameHanchan}>
+                      {game.hanchanCount}半荘
+                    </Text>
+                    <Text style={styles.resumeText}>タップして再開 →</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>ゲーム設定</Text>
@@ -267,6 +300,48 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 10,
     fontSize: 16,
+  },
+  suspendedGameCard: {
+    backgroundColor: '#e8f4fd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#b3d9f2',
+  },
+  suspendedGameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  suspendedGameDate: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1e3c72',
+  },
+  suspendedGameType: {
+    fontSize: 12,
+    color: '#6c757d',
+  },
+  suspendedGamePlayers: {
+    fontSize: 13,
+    color: '#333',
+    marginBottom: 6,
+  },
+  suspendedGameFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  suspendedGameHanchan: {
+    fontSize: 12,
+    color: '#6c757d',
+  },
+  resumeText: {
+    fontSize: 12,
+    color: '#2a5298',
+    fontWeight: 'bold',
   },
   startButton: {
     backgroundColor: '#2a5298',

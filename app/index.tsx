@@ -27,7 +27,17 @@ export default function Index() {
     setScreen('game');
   };
 
+  const handleResumeGame = (gameId: number) => {
+    setCurrentGameId(gameId);
+    setScreen('game');
+  };
+
   const handleFinishGame = () => {
+    setCurrentGameId(null);
+    setScreen('setup');
+  };
+
+  const handleSuspendGame = () => {
     setCurrentGameId(null);
     setScreen('setup');
   };
@@ -57,7 +67,11 @@ export default function Index() {
   return (
     <View style={styles.container}>
       {screen === 'game' && currentGameId && (
-        <GameScreen gameId={currentGameId} onFinish={handleFinishGame} />
+        <GameScreen
+          gameId={currentGameId}
+          onFinish={handleFinishGame}
+          onSuspend={handleSuspendGame}
+        />
       )}
       {screen === 'viewPastGame' && currentGameId && (
         <GameScreen gameId={currentGameId} onFinish={handleBackFromPastGame} readOnly />
@@ -71,6 +85,7 @@ export default function Index() {
       {screen === 'setup' && (
         <SetupScreen
           onStartGame={handleStartGame}
+          onResumeGame={handleResumeGame}
           onViewPastGames={handleViewPastGames}
         />
       )}
