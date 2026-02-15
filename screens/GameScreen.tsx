@@ -171,7 +171,7 @@ export default function GameScreen({ gameId, onFinish }: GameScreenProps) {
     );
   };
 
-  const handleDeleteChip = (chipId: number) => {
+  const handleDeleteChip = (chipIds: number[]) => {
     Alert.alert(
       'チップ記録削除',
       'このチップ移動の記録を削除しますか？\nこの操作は取り消せません。',
@@ -181,7 +181,7 @@ export default function GameScreen({ gameId, onFinish }: GameScreenProps) {
           text: '削除する',
           style: 'destructive',
           onPress: () => {
-            deleteChip(chipId);
+            chipIds.forEach(id => deleteChip(id));
             refreshHistory();
           },
         },

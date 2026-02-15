@@ -7,7 +7,7 @@ interface HistoryTableProps {
   chipHistory: any[];
   gameStartDate: string;
   onDeleteScore: (hanchan: number) => void;
-  onDeleteChip: (chipId: number) => void;
+  onDeleteChip: (chipIds: number[]) => void;
 }
 
 export default function HistoryTable({
@@ -46,11 +46,26 @@ export default function HistoryTable({
     });
   });
 
+  // チップをtimestampでグループ化
+  const chipGroups: Record<number, any[]> = {};
   chipHistory.forEach(chip => {
+    if (!chipGroups[chip.timestamp]) {
+      chipGroups[chip.timestamp] = [];
+    }
+    chipGroups[chip.timestamp].push(chip);
+  });
+
+  Object.keys(chipGroups).forEach(ts => {
+    const chips = chipGroups[Number(ts)];
     allRecords.push({
       type: 'chip',
-      data: chip,
-      timestamp: chip.timestamp,
+      data: {
+        chips,
+        hanchan: chips[0].hanchan,
+        formatted_time: chips[0].formatted_time,
+        timestamp: chips[0].timestamp,
+      },
+      timestamp: chips[0].timestamp,
     });
   });
 
@@ -107,23 +122,22 @@ export default function HistoryTable({
             </TouchableOpacity>
           );
         } else {
-          const chip = record.data;
+          const { chips, formatted_time } = record.data;
           return (
             <TouchableOpacity
               key={`chip-${index}`}
               style={[styles.historyRow, styles.chipRow]}
-              onLongPress={() => onDeleteChip(chip.id)}
+              onLongPress={() => onDeleteChip(chips.map((c: any) => c.id))}
               delayLongPress={800}
             >
               <View style={styles.historyHeader}>
                 <Text style={[styles.hanchanText, styles.chipText]}>💰 チップ</Text>
-                <Text style={[styles.timeText, styles.chipText]}>{chip.formatted_time}</Text>
+                <Text style={[styles.timeText, styles.chipText]}>{formatted_time}</Text>
               </View>
               <View style={styles.chipGrid}>
                 {players.map(player => {
-                  // このチップIDに対応するすべてのプレイヤーのチップを取得
-                  const playerChip = chipHistory.find(
-                    c => c.id === chip.id && c.player_name === player
+                  const playerChip = chips.find(
+                    (c: any) => c.player_name === player
                   );
                   const value = playerChip?.chip_point || 0;
                   return (
