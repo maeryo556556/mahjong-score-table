@@ -20,6 +20,7 @@ import {
   deleteHanchan,
   deleteChip,
   getCurrentGame,
+  finishGame,
 } from '../database';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
@@ -193,6 +194,7 @@ export default function GameScreen({ gameId, onFinish }: GameScreenProps) {
   };
 
   const confirmFinishGame = () => {
+    finishGame(gameId);
     setShowFinishModal(false);
     onFinish();
   };

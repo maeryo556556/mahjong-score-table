@@ -9,7 +9,8 @@ export const initDatabase = () => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       player_count INTEGER NOT NULL,
       start_date TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      finished INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS scores (
@@ -48,6 +49,13 @@ export const initDatabase = () => {
     CREATE INDEX IF NOT EXISTS idx_chips_game ON chips(game_id);
     CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
   `);
+
+  // 既存DBにfinishedカラムがない場合のマイグレーション
+  try {
+    db.runSync('ALTER TABLE games ADD COLUMN finished INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
 };
 
 // ゲーム作成
@@ -114,12 +122,17 @@ export const recordChip = (
   });
 };
 
-// 現在のゲーム取得
+// 現在のゲーム取得（未終了のゲームのみ）
 export const getCurrentGame = () => {
   const result = db.getFirstSync<{ id: number; player_count: number; start_date: string }>(
-    'SELECT id, player_count, start_date FROM games ORDER BY id DESC LIMIT 1'
+    'SELECT id, player_count, start_date FROM games WHERE finished = 0 ORDER BY id DESC LIMIT 1'
   );
   return result;
+};
+
+// ゲーム終了
+export const finishGame = (gameId: number) => {
+  db.runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
 };
 
 // プレイヤー名取得
