@@ -35,9 +35,18 @@ export const initDatabase = () => {
       FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS game_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL,
+      player_name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_scores_game ON scores(game_id);
     CREATE INDEX IF NOT EXISTS idx_scores_hanchan ON scores(game_id, hanchan);
     CREATE INDEX IF NOT EXISTS idx_chips_game ON chips(game_id);
+    CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
   `);
 };
 
@@ -45,13 +54,24 @@ export const initDatabase = () => {
 export const createGame = (playerCount: number, playerNames: string[]) => {
   const now = new Date();
   const startDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-  
-  const result = db.runSync(
-    'INSERT INTO games (player_count, start_date, created_at) VALUES (?, ?, ?)',
-    [playerCount, startDate, Date.now()]
-  );
-  
-  return result.lastInsertRowId;
+
+  let gameId: number = 0;
+  db.withTransactionSync(() => {
+    const result = db.runSync(
+      'INSERT INTO games (player_count, start_date, created_at) VALUES (?, ?, ?)',
+      [playerCount, startDate, Date.now()]
+    );
+    gameId = result.lastInsertRowId;
+
+    playerNames.forEach((name, index) => {
+      db.runSync(
+        'INSERT INTO game_players (game_id, player_name, sort_order) VALUES (?, ?, ?)',
+        [gameId, name, index]
+      );
+    });
+  });
+
+  return gameId;
 };
 
 // スコア記録
@@ -105,7 +125,7 @@ export const getCurrentGame = () => {
 // プレイヤー名取得
 export const getPlayerNames = (gameId: number) => {
   const result = db.getAllSync<{ player_name: string }>(
-    'SELECT DISTINCT player_name FROM scores WHERE game_id = ? ORDER BY player_name',
+    'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
     [gameId]
   );
   return result.map(r => r.player_name);
@@ -183,6 +203,7 @@ export const clearAllData = () => {
   db.withTransactionSync(() => {
     db.runSync('DELETE FROM chips');
     db.runSync('DELETE FROM scores');
+    db.runSync('DELETE FROM game_players');
     db.runSync('DELETE FROM games');
   });
 };
