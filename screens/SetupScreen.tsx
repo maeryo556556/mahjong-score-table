@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, getUnfinishedGames, clearAllData } from '../database';
+import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame } from '../database';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
@@ -39,10 +39,26 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     }
   };
 
+  const startNewGame = () => {
+    // 中断中のゲームを全て終了扱いにする
+    suspendedGames.forEach(game => {
+      if (game.hanchanCount === 0) {
+        deleteGame(game.id);
+      } else {
+        finishGame(game.id);
+      }
+    });
+    setSuspendedGames([]);
+
+    const names = playerNames.slice(0, playerCount);
+    const gameId = createGame(playerCount, names);
+    onStartGame(gameId);
+  };
+
   const handleStartGame = () => {
     // バリデーション
     const names = playerNames.slice(0, playerCount);
-    
+
     if (names.some(name => !name.trim())) {
       Alert.alert('入力エラー', 'すべてのプレイヤーの名前を入力してください');
       return;
@@ -53,8 +69,19 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       return;
     }
 
-    const gameId = createGame(playerCount, names);
-    onStartGame(gameId);
+    if (suspendedGames.length > 0) {
+      Alert.alert(
+        '確認',
+        '中断中のゲームがあります。\n新しいゲームを開始すると、中断中のゲームは終了扱いになります。\nよろしいですか？',
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: '開始する', onPress: startNewGame },
+        ]
+      );
+      return;
+    }
+
+    startNewGame();
   };
 
   const handleClearData = () => {
