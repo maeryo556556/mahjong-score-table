@@ -193,6 +193,17 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     );
   };
 
+  const handleSuspendGame = () => {
+    Alert.alert(
+      '確認',
+      'ゲームを中断しますか？\nセットアップ画面から再開できます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '中断する', onPress: () => onSuspend?.() },
+      ]
+    );
+  };
+
   const handleFinishGame = () => {
     setShowFinishModal(true);
   };
@@ -227,7 +238,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                 <Text style={styles.headerTitle}>第{currentHanchan}半荘</Text>
                 <View style={styles.headerButtons}>
                   {onSuspend && (
-                    <TouchableOpacity style={styles.suspendButton} onPress={onSuspend}>
+                    <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
                       <Text style={styles.suspendButtonText}>中断</Text>
                     </TouchableOpacity>
                   )}

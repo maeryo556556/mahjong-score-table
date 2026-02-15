@@ -142,7 +142,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             </View>
           )}
 
-          <View style={styles.card}>
+          <View style={[styles.card, suspendedGames.length > 0 && styles.cardWithMarginTop]}>
             <Text style={styles.sectionTitle}>ゲーム設定</Text>
 
             {/* 麻雀タイプ選択 */}
@@ -251,6 +251,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
+  },
+  cardWithMarginTop: {
+    marginTop: 16,
     shadowRadius: 8,
     elevation: 5,
   },
