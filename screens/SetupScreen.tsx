@@ -8,6 +8,8 @@ import {
   Alert,
   ScrollView,
   Modal,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -245,6 +247,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
         </ScrollView>
 
         <Modal visible={showImportModal} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
@@ -275,6 +278,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               </View>
             </View>
           </View>
+          </TouchableWithoutFeedback>
         </Modal>
       </SafeAreaView>
     </LinearGradient>
