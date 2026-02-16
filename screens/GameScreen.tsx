@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import {
   getPlayerNames,
   getScoreHistory,
@@ -219,6 +220,11 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     }
   };
 
+  const handleCopyToClipboard = async () => {
+    await Clipboard.setStringAsync(shareCode);
+    Alert.alert('コピー完了', '共有コードをクリップボードにコピーしました');
+  };
+
   const handleShareViaOS = async () => {
     try {
       await Share.share({
@@ -377,6 +383,12 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     onPress={handleShareViaOS}
                   >
                     <Text style={styles.shareModalButtonText}>送信する</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalCopyButton]}
+                    onPress={handleCopyToClipboard}
+                  >
+                    <Text style={styles.shareModalButtonText}>コピーする</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCloseButton]}
@@ -561,6 +573,9 @@ const styles = StyleSheet.create({
   },
   shareModalShareButton: {
     backgroundColor: '#2a5298',
+  },
+  shareModalCopyButton: {
+    backgroundColor: '#28a745',
   },
   shareModalButtonText: {
     color: '#fff',
