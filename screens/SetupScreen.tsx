@@ -7,22 +7,26 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame } from '../database';
+import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, importGameData } from '../database';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
   onResumeGame: (gameId: number) => void;
   onViewPastGames: () => void;
+  onImportGame: (gameId: number) => void;
 }
 
-export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onImportGame }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
   const [suspendedGames, setSuspendedGames] = useState<ReturnType<typeof getUnfinishedGames>>([]);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importCode, setImportCode] = useState('');
 
   useEffect(() => {
     const finished = getFinishedGames();
@@ -82,6 +86,26 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     }
 
     startNewGame();
+  };
+
+  const handleImport = () => {
+    const code = importCode.trim();
+    if (!code) {
+      Alert.alert('入力エラー', '共有コードを入力してください');
+      return;
+    }
+    try {
+      const gameId = importGameData(code);
+      setShowImportModal(false);
+      setImportCode('');
+      setHasPastGames(true);
+      Alert.alert('完了', 'ゲームデータを取り込みました', [
+        { text: '閲覧する', onPress: () => onImportGame(gameId) },
+        { text: 'OK' },
+      ]);
+    } catch (e: any) {
+      Alert.alert('エラー', e.message || '共有コードの読み取りに失敗しました');
+    }
   };
 
   const handleClearData = () => {
@@ -205,6 +229,13 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             )}
 
             <TouchableOpacity
+              style={[styles.startButton, styles.importButton]}
+              onPress={() => setShowImportModal(true)}
+            >
+              <Text style={styles.startButtonText}>ゲームを取り込む</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.startButton, styles.dangerButton]}
               onPress={handleClearData}
             >
@@ -212,6 +243,39 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             </TouchableOpacity>
           </View>
         </ScrollView>
+
+        <Modal visible={showImportModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.importModalContent}>
+              <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
+              <Text style={styles.importModalDescription}>
+                共有されたコードを貼り付けてください
+              </Text>
+              <TextInput
+                style={styles.importCodeInput}
+                value={importCode}
+                onChangeText={setImportCode}
+                placeholder="共有コードを貼り付け"
+                multiline
+                autoFocus
+              />
+              <View style={styles.importModalButtons}>
+                <TouchableOpacity
+                  style={[styles.importModalButton, styles.importModalSubmitButton]}
+                  onPress={handleImport}
+                >
+                  <Text style={styles.importModalButtonText}>取り込む</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.importModalButton, styles.importModalCancelButton]}
+                  onPress={() => { setShowImportModal(false); setImportCode(''); }}
+                >
+                  <Text style={styles.importModalCancelText}>キャンセル</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -388,6 +452,71 @@ const styles = StyleSheet.create({
   },
   startButtonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  importButton: {
+    backgroundColor: '#17a2b8',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  importModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+  },
+  importModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e3c72',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  importModalDescription: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  importCodeInput: {
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 12,
+    fontFamily: 'monospace',
+    minHeight: 100,
+    maxHeight: 200,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  importModalButtons: {
+    gap: 8,
+  },
+  importModalButton: {
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+  },
+  importModalSubmitButton: {
+    backgroundColor: '#17a2b8',
+  },
+  importModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  importModalCancelButton: {
+    backgroundColor: '#f0f0f0',
+  },
+  importModalCancelText: {
+    color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
   },

@@ -274,6 +274,91 @@ export const deleteChip = (chipId: number) => {
   db.runSync('DELETE FROM chips WHERE id = ?', [chipId]);
 };
 
+// ゲームデータをエクスポート用に取得
+export interface ShareGameData {
+  v: 1;
+  pc: number;
+  d: string;
+  p: string[];
+  s: Array<[number, string, number, number, number, string]>; // [hanchan, player_name, point, rank, timestamp, formatted_time]
+  c: Array<[number, string, number, number, string]>; // [hanchan, player_name, chip_point, timestamp, formatted_time]
+}
+
+export const exportGameData = (gameId: number): string => {
+  const game = getGameById(gameId);
+  if (!game) throw new Error('ゲームが見つかりません');
+
+  const players = getPlayerNames(gameId);
+  const scores = db.getAllSync<{
+    hanchan: number; player_name: string; point: number; rank: number; timestamp: number; formatted_time: string;
+  }>('SELECT hanchan, player_name, point, rank, timestamp, formatted_time FROM scores WHERE game_id = ? ORDER BY timestamp', [gameId]);
+
+  const chips = db.getAllSync<{
+    hanchan: number; player_name: string; chip_point: number; timestamp: number; formatted_time: string;
+  }>('SELECT hanchan, player_name, chip_point, timestamp, formatted_time FROM chips WHERE game_id = ? ORDER BY timestamp', [gameId]);
+
+  const data: ShareGameData = {
+    v: 1,
+    pc: game.player_count,
+    d: game.start_date,
+    p: players,
+    s: scores.map(s => [s.hanchan, s.player_name, s.point, s.rank, s.timestamp, s.formatted_time]),
+    c: chips.map(c => [c.hanchan, c.player_name, c.chip_point, c.timestamp, c.formatted_time]),
+  };
+
+  return btoa(JSON.stringify(data));
+};
+
+// 共有コードからゲームデータをインポート
+export const importGameData = (shareCode: string): number => {
+  let data: ShareGameData;
+  try {
+    data = JSON.parse(atob(shareCode));
+  } catch {
+    throw new Error('共有コードが正しくありません');
+  }
+
+  if (data.v !== 1 || !data.pc || !data.d || !data.p || !Array.isArray(data.p)) {
+    throw new Error('共有コードの形式が正しくありません');
+  }
+
+  let gameId = 0;
+  db.withTransactionSync(() => {
+    const result = db.runSync(
+      'INSERT INTO games (player_count, start_date, created_at, finished) VALUES (?, ?, ?, 1)',
+      [data.pc, data.d, Date.now()]
+    );
+    gameId = result.lastInsertRowId;
+
+    data.p.forEach((name, index) => {
+      db.runSync(
+        'INSERT INTO game_players (game_id, player_name, sort_order) VALUES (?, ?, ?)',
+        [gameId, name, index]
+      );
+    });
+
+    if (data.s) {
+      data.s.forEach(([hanchan, playerName, point, rank, timestamp, formattedTime]) => {
+        db.runSync(
+          'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [gameId, hanchan, playerName, point, rank, timestamp, formattedTime]
+        );
+      });
+    }
+
+    if (data.c) {
+      data.c.forEach(([hanchan, playerName, chipPoint, timestamp, formattedTime]) => {
+        db.runSync(
+          'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
+          [gameId, hanchan, playerName, chipPoint, timestamp, formattedTime]
+        );
+      });
+    }
+  });
+
+  return gameId;
+};
+
 // ゲームデータクリア
 export const clearAllData = () => {
   db.withTransactionSync(() => {

@@ -60,6 +60,11 @@ export default function Index() {
     setScreen('setup');
   };
 
+  const handleImportGame = (gameId: number) => {
+    setCurrentGameId(gameId);
+    setScreen('viewPastGame');
+  };
+
   if (isLoading) {
     return <View style={styles.container} />;
   }
@@ -87,6 +92,7 @@ export default function Index() {
           onStartGame={handleStartGame}
           onResumeGame={handleResumeGame}
           onViewPastGames={handleViewPastGames}
+          onImportGame={handleImportGame}
         />
       )}
     </View>
