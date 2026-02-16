@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Modal,
   Keyboard,
   TouchableWithoutFeedback,
+  Dimensions,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +31,57 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const [suspendedGames, setSuspendedGames] = useState<ReturnType<typeof getUnfinishedGames>>([]);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importCode, setImportCode] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
+  const [guideIndex, setGuideIndex] = useState(0);
+  const guideListRef = useRef<FlatList>(null);
+
+  const guideSlides = [
+    {
+      title: 'ゲームの始め方',
+      icon: '🀄',
+      steps: [
+        '3人麻雀 or 4人麻雀を選択',
+        'プレイヤー名を入力（4文字以内）',
+        '「ゲーム開始」をタップ',
+      ],
+    },
+    {
+      title: 'スコアの記録',
+      icon: '📝',
+      steps: [
+        'ドラムロールで各プレイヤーのポイントを入力',
+        '合計が ±0 になるよう調整',
+        '「スコアを記録」で保存',
+      ],
+    },
+    {
+      title: 'チップの記録',
+      icon: '💰',
+      steps: [
+        'チップ移動がある場合に入力',
+        'こちらも合計 ±0 が必要',
+        '「チップを記録」で保存',
+      ],
+    },
+    {
+      title: 'ゲームの中断・終了',
+      icon: '⏸️',
+      steps: [
+        '「中断」でゲームを一時保存（後で再開可能）',
+        '「ゲーム終了」で最終結果を確定',
+        '記録の長押しで個別削除も可能',
+      ],
+    },
+    {
+      title: 'ゲームの共有',
+      icon: '🔗',
+      steps: [
+        '過去のゲーム画面で「共有」をタップ',
+        '共有コードを相手に送信',
+        '相手は「ゲームを取り込む」からコードを入力',
+      ],
+    },
+  ];
 
   useEffect(() => {
     const finished = getFinishedGames();
@@ -135,6 +188,12 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.helpButton}
+              onPress={() => { setGuideIndex(0); setShowGuide(true); }}
+            >
+              <Text style={styles.helpButtonText}>?</Text>
+            </TouchableOpacity>
             <Text style={styles.title}>🀄 麻雀</Text>
             <Text style={styles.subtitle}>得点記録システム</Text>
           </View>
@@ -280,6 +339,79 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
           </View>
           </TouchableWithoutFeedback>
         </Modal>
+
+        <Modal visible={showGuide} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.guideModalContent}>
+              <FlatList
+                ref={guideListRef}
+                data={guideSlides}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEnabled={false}
+                keyExtractor={(_, i) => String(i)}
+                renderItem={({ item }) => (
+                  <View style={styles.guideSlide}>
+                    <Text style={styles.guideIcon}>{item.icon}</Text>
+                    <Text style={styles.guideTitle}>{item.title}</Text>
+                    <View style={styles.guideSteps}>
+                      {item.steps.map((step, i) => (
+                        <View key={i} style={styles.guideStepRow}>
+                          <View style={styles.guideStepBadge}>
+                            <Text style={styles.guideStepBadgeText}>{i + 1}</Text>
+                          </View>
+                          <Text style={styles.guideStepText}>{step}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              />
+              <View style={styles.guideDots}>
+                {guideSlides.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[styles.guideDot, i === guideIndex && styles.guideDotActive]}
+                  />
+                ))}
+              </View>
+              <View style={styles.guideNav}>
+                {guideIndex > 0 ? (
+                  <TouchableOpacity
+                    style={styles.guideNavButton}
+                    onPress={() => {
+                      const next = guideIndex - 1;
+                      setGuideIndex(next);
+                      guideListRef.current?.scrollToIndex({ index: next, animated: true });
+                    }}
+                  >
+                    <Text style={styles.guideNavText}>← 前へ</Text>
+                  </TouchableOpacity>
+                ) : <View style={styles.guideNavButton} />}
+                {guideIndex < guideSlides.length - 1 ? (
+                  <TouchableOpacity
+                    style={[styles.guideNavButton, styles.guideNavNext]}
+                    onPress={() => {
+                      const next = guideIndex + 1;
+                      setGuideIndex(next);
+                      guideListRef.current?.scrollToIndex({ index: next, animated: true });
+                    }}
+                  >
+                    <Text style={[styles.guideNavText, styles.guideNavNextText]}>次へ →</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.guideNavButton, styles.guideNavClose]}
+                    onPress={() => setShowGuide(false)}
+                  >
+                    <Text style={[styles.guideNavText, styles.guideNavNextText]}>閉じる</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -298,6 +430,24 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 24,
+    position: 'relative',
+  },
+  helpButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  helpButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   title: {
     fontSize: 36,
@@ -523,5 +673,97 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  guideModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  guideSlide: {
+    width: Dimensions.get('window').width - 96,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  guideIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  guideTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e3c72',
+    marginBottom: 20,
+  },
+  guideSteps: {
+    width: '100%',
+    gap: 12,
+  },
+  guideStepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  guideStepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2a5298',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  guideStepBadgeText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  guideStepText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  guideDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 20,
+    marginBottom: 16,
+  },
+  guideDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ddd',
+  },
+  guideDotActive: {
+    backgroundColor: '#2a5298',
+    width: 20,
+  },
+  guideNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  guideNavButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  guideNavNext: {
+    backgroundColor: '#2a5298',
+  },
+  guideNavClose: {
+    backgroundColor: '#2a5298',
+  },
+  guideNavText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#2a5298',
+  },
+  guideNavNextText: {
+    color: '#fff',
   },
 });
