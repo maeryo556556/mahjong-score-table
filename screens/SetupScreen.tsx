@@ -394,7 +394,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
           </View>
 
           <View style={[styles.card, styles.cardWithMarginTop]}>
-            <Text style={styles.sectionTitle}>その他</Text>
+            <Text style={styles.sectionTitle}>過去のゲーム履歴管理</Text>
 
             {hasPastGames && (
               <TouchableOpacity
