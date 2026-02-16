@@ -7,6 +7,8 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Share,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,6 +24,7 @@ import {
   getGameById,
   finishGame,
   deleteGame,
+  exportGameData,
 } from '../database';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
@@ -45,6 +48,8 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   const [chipHistory, setChipHistory] = useState<any[]>([]);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareCode, setShareCode] = useState('');
 
   useEffect(() => {
     loadGameData();
@@ -204,6 +209,27 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     );
   };
 
+  const handleShareGame = () => {
+    try {
+      const code = exportGameData(gameId);
+      setShareCode(code);
+      setShowShareModal(true);
+    } catch {
+      Alert.alert('エラー', '共有コードの生成に失敗しました');
+    }
+  };
+
+  const handleShareViaOS = async () => {
+    try {
+      await Share.share({
+        message: shareCode,
+        title: '麻雀スコアシート - ゲーム共有',
+      });
+    } catch {
+      // ユーザーがキャンセルした場合など
+    }
+  };
+
   const handleFinishGame = () => {
     setShowFinishModal(true);
   };
@@ -231,7 +257,9 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                   <Text style={styles.backButtonText}>← 戻る</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{gameStartDate}</Text>
-                <View style={styles.headerSpacer} />
+                <TouchableOpacity style={styles.shareButton} onPress={handleShareGame}>
+                  <Text style={styles.shareButtonText}>共有</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <>
@@ -324,6 +352,42 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
             onConfirm={confirmFinishGame}
             onCancel={() => setShowFinishModal(false)}
           />
+        )}
+        {readOnly && (
+          <Modal visible={showShareModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.shareModalContent}>
+                <Text style={styles.shareModalTitle}>ゲームを共有</Text>
+                <Text style={styles.shareModalDescription}>
+                  以下の共有コードを相手に送ってください。{'\n'}
+                  相手はセットアップ画面の「ゲームを取り込む」から入力できます。
+                </Text>
+                <View style={styles.shareCodeContainer}>
+                  <TextInput
+                    style={styles.shareCodeText}
+                    value={shareCode}
+                    editable={false}
+                    multiline
+                    selectTextOnFocus
+                  />
+                </View>
+                <View style={styles.shareModalButtons}>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalShareButton]}
+                    onPress={handleShareViaOS}
+                  >
+                    <Text style={styles.shareModalButtonText}>送信する</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalCloseButton]}
+                    onPress={() => setShowShareModal(false)}
+                  >
+                    <Text style={styles.shareModalCloseText}>閉じる</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
         )}
       </SafeAreaView>
     </LinearGradient>
@@ -432,6 +496,83 @@ const styles = StyleSheet.create({
   recordButtonText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  shareButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#2a5298',
+    borderRadius: 6,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  shareModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxHeight: '80%',
+  },
+  shareModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e3c72',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  shareModalDescription: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  shareCodeContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    maxHeight: 150,
+    marginBottom: 16,
+  },
+  shareCodeText: {
+    fontSize: 11,
+    color: '#333',
+    fontFamily: 'monospace',
+  },
+  shareModalButtons: {
+    gap: 8,
+  },
+  shareModalButton: {
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+  },
+  shareModalShareButton: {
+    backgroundColor: '#2a5298',
+  },
+  shareModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  shareModalCloseButton: {
+    backgroundColor: '#f0f0f0',
+  },
+  shareModalCloseText: {
+    color: '#666',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });
