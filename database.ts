@@ -306,14 +306,17 @@ export const exportGameData = (gameId: number): string => {
     c: chips.map(c => [c.hanchan, c.player_name, c.chip_point, c.timestamp, c.formatted_time]),
   };
 
-  return btoa(JSON.stringify(data));
+  const json = JSON.stringify(data);
+  return btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
 };
 
 // 共有コードからゲームデータをインポート
 export const importGameData = (shareCode: string): number => {
   let data: ShareGameData;
   try {
-    data = JSON.parse(atob(shareCode));
+    const binary = atob(shareCode);
+    const json = decodeURIComponent(binary.split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    data = JSON.parse(json);
   } catch {
     throw new Error('共有コードが正しくありません');
   }
