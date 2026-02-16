@@ -36,6 +36,12 @@
           "enableFTS": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ba33f96a-5c49-412f-9022-abc59c4eb881"
+      }
+    }
   }
 }
