@@ -143,7 +143,7 @@ export default function HistoryTable({
               })}
             >
               <View style={styles.historyHeader}>
-                <Text style={[styles.hanchanText, styles.chipText]}>💰 チップ</Text>
+                <Text style={[styles.hanchanText, styles.chipText]}>🎉 チップ</Text>
                 <Text style={[styles.timeText, styles.chipText]}>{formatted_time}</Text>
               </View>
               <View style={styles.chipGrid}>

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "麻雀スコアシート",
+    "name": "麻雀スコアシートモバイル",
     "slug": "mahjong-score-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -36,6 +36,12 @@
           "enableFTS": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ba33f96a-5c49-412f-9022-abc59c4eb881"
+      }
+    }
   }
 }

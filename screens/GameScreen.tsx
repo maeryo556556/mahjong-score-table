@@ -223,7 +223,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     try {
       await Share.share({
         message: shareCode,
-        title: '麻雀スコアシート - ゲーム共有',
+        title: '麻雀スコアシートモバイル - ゲーム共有',
       });
     } catch {
       // ユーザーがキャンセルした場合など
@@ -300,7 +300,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
 
               {/* チップ移動 */}
               <View style={styles.card}>
-                <Text style={styles.sectionTitle}>💰 チップ移動</Text>
+                <Text style={styles.sectionTitle}>🎉 チップ移動</Text>
                 <View style={styles.inputGrid}>
                   {players.map((player, index) => (
                     <DrumRollInput
