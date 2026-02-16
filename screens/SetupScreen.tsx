@@ -304,6 +304,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               onPress={() => { setGuideIndex(0); setShowGuide(true); }}
             >
               <Text style={styles.helpButtonText}>?</Text>
+              <Text style={styles.helpButtonLabel}>使い方</Text>
             </TouchableOpacity>
             <Text style={styles.title}>🀄 麻雀</Text>
             <Text style={styles.subtitle}>得点記録システム</Text>
@@ -547,9 +548,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    paddingVertical: 4,
+    borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -557,8 +558,15 @@ const styles = StyleSheet.create({
   },
   helpButtonText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
+    lineHeight: 20,
+  },
+  helpButtonLabel: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: 'bold',
+    marginTop: 1,
   },
   title: {
     fontSize: 36,
