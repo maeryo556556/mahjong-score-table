@@ -81,7 +81,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const guideMockups: React.ReactNode[] = [
     // 1: セットアップ画面
     <View style={g.phone}>
-      <View style={g.phoneHeader}><Text style={g.phTitle}>🀄 麻雀</Text></View>
+      <View style={g.phoneHeader}><Text style={g.phTitle}>🀄 麻雀スコアシート</Text></View>
       <View style={g.phoneBody}>
         <View style={g.miniCard}>
           <Text style={g.miniLabel}>麻雀タイプ</Text>
@@ -137,7 +137,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       </View>
       <View style={g.phoneBody}>
         <View style={g.miniCard}>
-          <Text style={g.miniSectionTitle}>💰 チップ移動</Text>
+          <Text style={g.miniSectionTitle}>🎉 チップ移動</Text>
           <View style={g.miniRow}>
             <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>太郎</Text><Text style={g.miniScoreVal}>+3</Text></View>
             <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>花子</Text><Text style={g.miniScoreValNeg}>-1</Text></View>
@@ -307,7 +307,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               <Text style={styles.helpButtonLabel}>使い方</Text>
             </TouchableOpacity>
             <Text style={styles.title}>🀄 麻雀</Text>
-            <Text style={styles.subtitle}>得点記録システム</Text>
+            <Text style={styles.subtitle}>スコアシートモバイル</Text>
           </View>
 
           {suspendedGames.length > 0 && (
@@ -388,9 +388,13 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               ))}
             </View>
 
-            <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
+            <TouchableOpacity style={[styles.startButton, { marginTop: 4 }]} onPress={handleStartGame}>
               <Text style={styles.startButtonText}>ゲーム開始</Text>
             </TouchableOpacity>
+          </View>
+
+          <View style={[styles.card, styles.cardWithMarginTop]}>
+            <Text style={styles.sectionTitle}>その他</Text>
 
             {hasPastGames && (
               <TouchableOpacity
@@ -402,14 +406,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             )}
 
             <TouchableOpacity
-              style={[styles.startButton, styles.importButton]}
+              style={[styles.startButton, styles.importButton, hasPastGames && styles.buttonMarginTop]}
               onPress={() => setShowImportModal(true)}
             >
               <Text style={styles.startButtonText}>ゲームを取り込む</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.startButton, styles.dangerButton]}
+              style={[styles.startButton, styles.dangerButton, styles.buttonMarginTop]}
               onPress={handleClearData}
             >
               <Text style={styles.startButtonText}>保存データをクリア</Text>
@@ -715,6 +719,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 14,
     alignItems: 'center',
+  },
+  buttonMarginTop: {
     marginTop: 8,
   },
   secondaryButton: {
