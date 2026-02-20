@@ -1,10 +1,17 @@
 import * as SQLite from 'expo-sqlite';
 
-const db = SQLite.openDatabaseSync('mahjong.db');
+let _db: SQLite.SQLiteDatabase | null = null;
+
+const getDb = (): SQLite.SQLiteDatabase => {
+  if (!_db) {
+    _db = SQLite.openDatabaseSync('mahjong.db');
+  }
+  return _db;
+};
 
 // データベース初期化
 export const initDatabase = () => {
-  db.execSync(`
+  getDb().execSync(`
     CREATE TABLE IF NOT EXISTS games (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       player_count INTEGER NOT NULL,
@@ -52,7 +59,7 @@ export const initDatabase = () => {
 
   // 既存DBにfinishedカラムがない場合のマイグレーション
   try {
-    db.runSync('ALTER TABLE games ADD COLUMN finished INTEGER NOT NULL DEFAULT 0');
+    getDb().runSync('ALTER TABLE games ADD COLUMN finished INTEGER NOT NULL DEFAULT 0');
   } catch {
     // カラムが既に存在する場合は無視
   }
@@ -64,15 +71,15 @@ export const createGame = (playerCount: number, playerNames: string[]) => {
   const startDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
   let gameId: number = 0;
-  db.withTransactionSync(() => {
-    const result = db.runSync(
+  getDb().withTransactionSync(() => {
+    const result = getDb().runSync(
       'INSERT INTO games (player_count, start_date, created_at) VALUES (?, ?, ?)',
       [playerCount, startDate, Date.now()]
     );
     gameId = result.lastInsertRowId;
 
     playerNames.forEach((name, index) => {
-      db.runSync(
+      getDb().runSync(
         'INSERT INTO game_players (game_id, player_name, sort_order) VALUES (?, ?, ?)',
         [gameId, name, index]
       );
@@ -92,9 +99,9 @@ export const recordScore = (
   const timestamp = now.getTime();
   const formattedTime = `${now.getMonth() + 1}月${now.getDate()}日${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-  db.withTransactionSync(() => {
+  getDb().withTransactionSync(() => {
     scores.forEach(score => {
-      db.runSync(
+      getDb().runSync(
         'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [gameId, hanchan, score.player, score.point, score.rank, timestamp, formattedTime]
       );
@@ -112,9 +119,9 @@ export const recordChip = (
   const timestamp = now.getTime();
   const formattedTime = `${now.getMonth() + 1}月${now.getDate()}日${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-  db.withTransactionSync(() => {
+  getDb().withTransactionSync(() => {
     chips.forEach(chip => {
-      db.runSync(
+      getDb().runSync(
         'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
         [gameId, hanchan, chip.player, chip.chipPoint, timestamp, formattedTime]
       );
@@ -124,7 +131,7 @@ export const recordChip = (
 
 // 現在のゲーム取得（未終了のゲームのみ）
 export const getCurrentGame = () => {
-  const result = db.getFirstSync<{ id: number; player_count: number; start_date: string }>(
+  const result = getDb().getFirstSync<{ id: number; player_count: number; start_date: string }>(
     'SELECT id, player_count, start_date FROM games WHERE finished = 0 ORDER BY id DESC LIMIT 1'
   );
   return result;
@@ -132,12 +139,12 @@ export const getCurrentGame = () => {
 
 // ゲーム終了
 export const finishGame = (gameId: number) => {
-  db.runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
+  getDb().runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
 };
 
 // ゲームをIDで取得
 export const getGameById = (gameId: number) => {
-  const result = db.getFirstSync<{ id: number; player_count: number; start_date: string; finished: number }>(
+  const result = getDb().getFirstSync<{ id: number; player_count: number; start_date: string; finished: number }>(
     'SELECT id, player_count, start_date, finished FROM games WHERE id = ?',
     [gameId]
   );
@@ -146,15 +153,15 @@ export const getGameById = (gameId: number) => {
 
 // 終了済みゲーム一覧取得
 export const getFinishedGames = () => {
-  const games = db.getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
+  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
     'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
   );
   return games.map(game => {
-    const players = db.getAllSync<{ player_name: string }>(
+    const players = getDb().getAllSync<{ player_name: string }>(
       'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
       [game.id]
     );
-    const hanchanCount = db.getFirstSync<{ count: number }>(
+    const hanchanCount = getDb().getFirstSync<{ count: number }>(
       'SELECT COUNT(DISTINCT hanchan) as count FROM scores WHERE game_id = ?',
       [game.id]
     );
@@ -168,15 +175,15 @@ export const getFinishedGames = () => {
 
 // 中断中（未終了）ゲーム一覧取得
 export const getUnfinishedGames = () => {
-  const games = db.getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
+  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
     'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 0 ORDER BY created_at DESC'
   );
   return games.map(game => {
-    const players = db.getAllSync<{ player_name: string }>(
+    const players = getDb().getAllSync<{ player_name: string }>(
       'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
       [game.id]
     );
-    const hanchanCount = db.getFirstSync<{ count: number }>(
+    const hanchanCount = getDb().getFirstSync<{ count: number }>(
       'SELECT COUNT(DISTINCT hanchan) as count FROM scores WHERE game_id = ?',
       [game.id]
     );
@@ -190,17 +197,17 @@ export const getUnfinishedGames = () => {
 
 // ゲーム削除
 export const deleteGame = (gameId: number) => {
-  db.withTransactionSync(() => {
-    db.runSync('DELETE FROM chips WHERE game_id = ?', [gameId]);
-    db.runSync('DELETE FROM scores WHERE game_id = ?', [gameId]);
-    db.runSync('DELETE FROM game_players WHERE game_id = ?', [gameId]);
-    db.runSync('DELETE FROM games WHERE id = ?', [gameId]);
+  getDb().withTransactionSync(() => {
+    getDb().runSync('DELETE FROM chips WHERE game_id = ?', [gameId]);
+    getDb().runSync('DELETE FROM scores WHERE game_id = ?', [gameId]);
+    getDb().runSync('DELETE FROM game_players WHERE game_id = ?', [gameId]);
+    getDb().runSync('DELETE FROM games WHERE id = ?', [gameId]);
   });
 };
 
 // プレイヤー名取得
 export const getPlayerNames = (gameId: number) => {
-  const result = db.getAllSync<{ player_name: string }>(
+  const result = getDb().getAllSync<{ player_name: string }>(
     'SELECT player_name FROM game_players WHERE game_id = ? ORDER BY sort_order',
     [gameId]
   );
@@ -209,7 +216,7 @@ export const getPlayerNames = (gameId: number) => {
 
 // スコア履歴取得
 export const getScoreHistory = (gameId: number) => {
-  const result = db.getAllSync<{
+  const result = getDb().getAllSync<{
     hanchan: number;
     player_name: string;
     point: number;
@@ -225,7 +232,7 @@ export const getScoreHistory = (gameId: number) => {
 
 // チップ履歴取得
 export const getChipHistory = (gameId: number) => {
-  const result = db.getAllSync<{
+  const result = getDb().getAllSync<{
     id: number;
     hanchan: number;
     player_name: string;
@@ -241,7 +248,7 @@ export const getChipHistory = (gameId: number) => {
 
 // 次の半荘番号取得
 export const getNextHanchan = (gameId: number) => {
-  const result = db.getFirstSync<{ max_hanchan: number | null }>(
+  const result = getDb().getFirstSync<{ max_hanchan: number | null }>(
     'SELECT MAX(hanchan) as max_hanchan FROM scores WHERE game_id = ?',
     [gameId]
   );
@@ -250,11 +257,11 @@ export const getNextHanchan = (gameId: number) => {
 
 // 半荘削除
 export const deleteHanchan = (gameId: number, hanchan: number) => {
-  db.withTransactionSync(() => {
-    db.runSync('DELETE FROM scores WHERE game_id = ? AND hanchan = ?', [gameId, hanchan]);
+  getDb().withTransactionSync(() => {
+    getDb().runSync('DELETE FROM scores WHERE game_id = ? AND hanchan = ?', [gameId, hanchan]);
     
     // 半荘番号を採番し直す
-    const scores = db.getAllSync<{ hanchan: number; timestamp: number }>(
+    const scores = getDb().getAllSync<{ hanchan: number; timestamp: number }>(
       'SELECT DISTINCT hanchan, MIN(timestamp) as timestamp FROM scores WHERE game_id = ? GROUP BY hanchan ORDER BY timestamp',
       [gameId]
     );
@@ -262,8 +269,8 @@ export const deleteHanchan = (gameId: number, hanchan: number) => {
     scores.forEach((item, index) => {
       const newHanchan = index + 1;
       if (item.hanchan !== newHanchan) {
-        db.runSync('UPDATE scores SET hanchan = ? WHERE game_id = ? AND hanchan = ?', [newHanchan, gameId, item.hanchan]);
-        db.runSync('UPDATE chips SET hanchan = ? WHERE game_id = ? AND hanchan = ?', [newHanchan, gameId, item.hanchan]);
+        getDb().runSync('UPDATE scores SET hanchan = ? WHERE game_id = ? AND hanchan = ?', [newHanchan, gameId, item.hanchan]);
+        getDb().runSync('UPDATE chips SET hanchan = ? WHERE game_id = ? AND hanchan = ?', [newHanchan, gameId, item.hanchan]);
       }
     });
   });
@@ -271,7 +278,7 @@ export const deleteHanchan = (gameId: number, hanchan: number) => {
 
 // チップ削除
 export const deleteChip = (chipId: number) => {
-  db.runSync('DELETE FROM chips WHERE id = ?', [chipId]);
+  getDb().runSync('DELETE FROM chips WHERE id = ?', [chipId]);
 };
 
 // ゲームデータをエクスポート用に取得
@@ -289,11 +296,11 @@ export const exportGameData = (gameId: number): string => {
   if (!game) throw new Error('ゲームが見つかりません');
 
   const players = getPlayerNames(gameId);
-  const scores = db.getAllSync<{
+  const scores = getDb().getAllSync<{
     hanchan: number; player_name: string; point: number; rank: number; timestamp: number; formatted_time: string;
   }>('SELECT hanchan, player_name, point, rank, timestamp, formatted_time FROM scores WHERE game_id = ? ORDER BY timestamp', [gameId]);
 
-  const chips = db.getAllSync<{
+  const chips = getDb().getAllSync<{
     hanchan: number; player_name: string; chip_point: number; timestamp: number; formatted_time: string;
   }>('SELECT hanchan, player_name, chip_point, timestamp, formatted_time FROM chips WHERE game_id = ? ORDER BY timestamp', [gameId]);
 
@@ -326,15 +333,15 @@ export const importGameData = (shareCode: string): number => {
   }
 
   let gameId = 0;
-  db.withTransactionSync(() => {
-    const result = db.runSync(
+  getDb().withTransactionSync(() => {
+    const result = getDb().runSync(
       'INSERT INTO games (player_count, start_date, created_at, finished) VALUES (?, ?, ?, 1)',
       [data.pc, data.d, Date.now()]
     );
     gameId = result.lastInsertRowId;
 
     data.p.forEach((name, index) => {
-      db.runSync(
+      getDb().runSync(
         'INSERT INTO game_players (game_id, player_name, sort_order) VALUES (?, ?, ?)',
         [gameId, name, index]
       );
@@ -342,7 +349,7 @@ export const importGameData = (shareCode: string): number => {
 
     if (data.s) {
       data.s.forEach(([hanchan, playerName, point, rank, timestamp, formattedTime]) => {
-        db.runSync(
+        getDb().runSync(
           'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [gameId, hanchan, playerName, point, rank, timestamp, formattedTime]
         );
@@ -351,7 +358,7 @@ export const importGameData = (shareCode: string): number => {
 
     if (data.c) {
       data.c.forEach(([hanchan, playerName, chipPoint, timestamp, formattedTime]) => {
-        db.runSync(
+        getDb().runSync(
           'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
           [gameId, hanchan, playerName, chipPoint, timestamp, formattedTime]
         );
@@ -364,12 +371,12 @@ export const importGameData = (shareCode: string): number => {
 
 // ゲームデータクリア
 export const clearAllData = () => {
-  db.withTransactionSync(() => {
-    db.runSync('DELETE FROM chips');
-    db.runSync('DELETE FROM scores');
-    db.runSync('DELETE FROM game_players');
-    db.runSync('DELETE FROM games');
+  getDb().withTransactionSync(() => {
+    getDb().runSync('DELETE FROM chips');
+    getDb().runSync('DELETE FROM scores');
+    getDb().runSync('DELETE FROM game_players');
+    getDb().runSync('DELETE FROM games');
   });
 };
 
-export default db;
+export default getDb;
