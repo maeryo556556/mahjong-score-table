@@ -282,39 +282,70 @@ export const deleteChip = (chipId: number) => {
 };
 
 // ゲームデータをエクスポート用に取得
-export interface ShareGameData {
+// v1: 旧フォーマット（後方互換用）
+export interface ShareGameDataV1 {
   v: 1;
   pc: number;
   d: string;
   p: string[];
-  s: Array<[number, string, number, number, number, string]>; // [hanchan, player_name, point, rank, timestamp, formatted_time]
-  c: Array<[number, string, number, number, string]>; // [hanchan, player_name, chip_point, timestamp, formatted_time]
+  s: Array<[number, string, number, number, number, string]>;
+  c: Array<[number, string, number, number, string]>;
 }
+
+// v2: コンパクトフォーマット（プレイヤーインデックス、冗長データ削除）
+export interface ShareGameDataV2 {
+  v: 2;
+  pc: number;
+  d: string;
+  p: string[];
+  s: Array<[number, number, number]>; // [hanchan, playerIndex, point]
+  c?: Array<[number, number, number]>; // [hanchan, playerIndex, chipPoint]
+}
+
+type ShareGameData = ShareGameDataV1 | ShareGameDataV2;
 
 export const exportGameData = (gameId: number): string => {
   const game = getGameById(gameId);
   if (!game) throw new Error('ゲームが見つかりません');
 
   const players = getPlayerNames(gameId);
+  const playerIndex = new Map(players.map((name, i) => [name, i]));
+
   const scores = getDb().getAllSync<{
-    hanchan: number; player_name: string; point: number; rank: number; timestamp: number; formatted_time: string;
-  }>('SELECT hanchan, player_name, point, rank, timestamp, formatted_time FROM scores WHERE game_id = ? ORDER BY timestamp', [gameId]);
+    hanchan: number; player_name: string; point: number;
+  }>('SELECT hanchan, player_name, point FROM scores WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
 
   const chips = getDb().getAllSync<{
-    hanchan: number; player_name: string; chip_point: number; timestamp: number; formatted_time: string;
-  }>('SELECT hanchan, player_name, chip_point, timestamp, formatted_time FROM chips WHERE game_id = ? ORDER BY timestamp', [gameId]);
+    hanchan: number; player_name: string; chip_point: number;
+  }>('SELECT hanchan, player_name, chip_point FROM chips WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
 
-  const data: ShareGameData = {
-    v: 1,
+  const data: ShareGameDataV2 = {
+    v: 2,
     pc: game.player_count,
     d: game.start_date,
     p: players,
-    s: scores.map(s => [s.hanchan, s.player_name, s.point, s.rank, s.timestamp, s.formatted_time]),
-    c: chips.map(c => [c.hanchan, c.player_name, c.chip_point, c.timestamp, c.formatted_time]),
+    s: scores.map(s => [s.hanchan, playerIndex.get(s.player_name)!, s.point]),
+    ...(chips.length > 0 ? { c: chips.map(c => [c.hanchan, playerIndex.get(c.player_name)!, c.chip_point]) } : {}),
   };
 
   const json = JSON.stringify(data);
   return btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+};
+
+// 順位を計算するヘルパー
+const calcRanks = (players: string[], scoresInHanchan: Map<string, number>): Map<string, number> => {
+  const sorted = players
+    .map(p => ({ player: p, point: scoresInHanchan.get(p) ?? 0 }))
+    .sort((a, b) => b.point - a.point);
+  const ranks = new Map<string, number>();
+  let currentRank = 1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i].point < sorted[i - 1].point) {
+      currentRank = i + 1;
+    }
+    ranks.set(sorted[i].player, currentRank);
+  }
+  return ranks;
 };
 
 // 共有コードからゲームデータをインポート
@@ -328,15 +359,19 @@ export const importGameData = (shareCode: string): number => {
     throw new Error('共有コードが正しくありません');
   }
 
-  if (data.v !== 1 || !data.pc || !data.d || !data.p || !Array.isArray(data.p)) {
+  if ((data.v !== 1 && data.v !== 2) || !data.pc || !data.d || !data.p || !Array.isArray(data.p)) {
     throw new Error('共有コードの形式が正しくありません');
   }
 
   let gameId = 0;
+  const now = Date.now();
+  const dateParts = data.d.split('/');
+  const formattedTime = `${parseInt(dateParts[1])}月${parseInt(dateParts[2])}日`;
+
   getDb().withTransactionSync(() => {
     const result = getDb().runSync(
       'INSERT INTO games (player_count, start_date, created_at, finished) VALUES (?, ?, ?, 1)',
-      [data.pc, data.d, Date.now()]
+      [data.pc, data.d, now]
     );
     gameId = result.lastInsertRowId;
 
@@ -347,22 +382,53 @@ export const importGameData = (shareCode: string): number => {
       );
     });
 
-    if (data.s) {
-      data.s.forEach(([hanchan, playerName, point, rank, timestamp, formattedTime]) => {
-        getDb().runSync(
-          'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [gameId, hanchan, playerName, point, rank, timestamp, formattedTime]
-        );
-      });
-    }
+    if (data.v === 1) {
+      // v1: 旧フォーマットそのまま
+      if (data.s) {
+        data.s.forEach(([hanchan, playerName, point, rank, timestamp, ft]) => {
+          getDb().runSync(
+            'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [gameId, hanchan, playerName, point, rank, timestamp, ft]
+          );
+        });
+      }
+      if (data.c) {
+        data.c.forEach(([hanchan, playerName, chipPoint, timestamp, ft]) => {
+          getDb().runSync(
+            'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
+            [gameId, hanchan, playerName, chipPoint, timestamp, ft]
+          );
+        });
+      }
+    } else {
+      // v2: プレイヤーインデックスから名前復元、順位再計算
+      if (data.s) {
+        // 半荘ごとにグループ化して順位を計算
+        const byHanchan = new Map<number, Array<{ playerName: string; point: number }>>();
+        data.s.forEach(([hanchan, pIdx, point]) => {
+          if (!byHanchan.has(hanchan)) byHanchan.set(hanchan, []);
+          byHanchan.get(hanchan)!.push({ playerName: data.p[pIdx], point });
+        });
 
-    if (data.c) {
-      data.c.forEach(([hanchan, playerName, chipPoint, timestamp, formattedTime]) => {
-        getDb().runSync(
-          'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
-          [gameId, hanchan, playerName, chipPoint, timestamp, formattedTime]
-        );
-      });
+        byHanchan.forEach((entries, hanchan) => {
+          const scoresMap = new Map(entries.map(e => [e.playerName, e.point]));
+          const ranks = calcRanks(data.p, scoresMap);
+          entries.forEach(({ playerName, point }) => {
+            getDb().runSync(
+              'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [gameId, hanchan, playerName, point, ranks.get(playerName)!, now, formattedTime]
+            );
+          });
+        });
+      }
+      if (data.c) {
+        data.c.forEach(([hanchan, pIdx, chipPoint]) => {
+          getDb().runSync(
+            'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
+            [gameId, hanchan, data.p[pIdx], chipPoint, now, formattedTime]
+          );
+        });
+      }
     }
   });
 
