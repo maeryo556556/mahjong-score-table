@@ -2,7 +2,7 @@
   "expo": {
     "name": "麻雀スコアシートモバイル",
     "slug": "mahjong-score-tracker",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "scheme": "mahjong-score",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +18,10 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mahjong.scoretracker"
+      "bundleIdentifier": "com.mahjong.scoretracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
