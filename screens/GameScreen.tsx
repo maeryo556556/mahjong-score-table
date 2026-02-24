@@ -318,7 +318,17 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
             <>
               {/* ポイント入力 */}
               <View style={styles.card}>
-                <Text style={styles.sectionTitle}>🀄 ポイント入力</Text>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>🀄 ポイント入力</Text>
+                  {(() => {
+                    const total = scoreValues.reduce((sum, v) => sum + v, 0);
+                    return (
+                      <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
+                        合計: {total > 0 ? '+' : ''}{total}
+                      </Text>
+                    );
+                  })()}
+                </View>
                 <View style={styles.inputGrid}>
                   {players.map((player, index) => (
                     <DrumRollInput
@@ -336,7 +346,17 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
 
               {/* チップ移動 */}
               <View style={styles.card}>
-                <Text style={styles.sectionTitle}>🎉 チップ移動</Text>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>🎉 チップ移動</Text>
+                  {(() => {
+                    const total = chipValues.reduce((sum, v) => sum + v, 0);
+                    return (
+                      <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
+                        合計: {total > 0 ? '+' : ''}{total}
+                      </Text>
+                    );
+                  })()}
+                </View>
                 <View style={styles.inputGrid}>
                   {players.map((player, index) => (
                     <DrumRollInput
@@ -513,19 +533,31 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e3c72',
+  sectionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
     marginBottom: 12,
     borderBottomWidth: 2,
     borderBottomColor: '#2a5298',
     paddingBottom: 6,
   },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e3c72',
+  },
   inputGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  totalPreview: {
+    fontSize: 12,
+    color: '#28a745',
+  },
+  totalPreviewError: {
+    color: '#dc3545',
   },
   recordButton: {
     backgroundColor: '#2a5298',
