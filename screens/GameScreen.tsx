@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Modal,
   Share,
   TextInput,
+  Animated,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -51,6 +54,9 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareCode, setShareCode] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollTopButtonOpacity = useRef(new Animated.Value(0)).current;
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
     loadGameData();
@@ -240,6 +246,25 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     setShowFinishModal(true);
   };
 
+  const showScrollTopRef = useRef(false);
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    const shouldShow = offsetY > 200;
+    if (shouldShow !== showScrollTopRef.current) {
+      showScrollTopRef.current = shouldShow;
+      setShowScrollTop(shouldShow);
+      Animated.timing(scrollTopButtonOpacity, {
+        toValue: shouldShow ? 1 : 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+
   const confirmFinishGame = () => {
     // 記録がない場合はゲームデータ自体を削除
     if (scoreHistory.length === 0 && chipHistory.length === 0) {
@@ -254,7 +279,12 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
   return (
     <LinearGradient colors={['#1e3c72', '#2a5298']} style={styles.gradient}>
       <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+        >
           {/* ヘッダー */}
           <View style={styles.header}>
             {readOnly ? (
@@ -401,6 +431,11 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
             </View>
           </Modal>
         )}
+        <Animated.View style={[styles.scrollTopButton, { opacity: scrollTopButtonOpacity }]} pointerEvents={showScrollTop ? 'auto' : 'none'}>
+          <TouchableOpacity onPress={scrollToTop} style={styles.scrollTopTouchable} activeOpacity={0.7}>
+            <Text style={styles.scrollTopIcon}>↑</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -589,5 +624,30 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  scrollTopButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    zIndex: 10,
+  },
+  scrollTopTouchable: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(30, 60, 114, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  scrollTopIcon: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: -2,
   },
 });
