@@ -333,8 +333,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                   const total = scoreValues.reduce((sum, v) => sum + v, 0);
                   return (
                     <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
-                      合計: {total > 0 ? '+' : ''}{total}{total !== 0 ? ' (±0にしてください)' : ' OK'}
-                    </Text>
+                      合計: {total > 0 ? '+' : ''}{total}                    </Text>
                   );
                 })()}
                 <TouchableOpacity style={[styles.recordButton, styles.scoreButton]} onPress={handleRecordScore}>
@@ -359,8 +358,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                   const total = chipValues.reduce((sum, v) => sum + v, 0);
                   return (
                     <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
-                      合計: {total > 0 ? '+' : ''}{total}{total !== 0 ? ' (±0にしてください)' : ' OK'}
-                    </Text>
+                      合計: {total > 0 ? '+' : ''}{total}                    </Text>
                   );
                 })()}
                 <TouchableOpacity
