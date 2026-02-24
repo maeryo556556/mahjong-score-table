@@ -329,6 +329,14 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     />
                   ))}
                 </View>
+                {(() => {
+                  const total = scoreValues.reduce((sum, v) => sum + v, 0);
+                  return (
+                    <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
+                      合計: {total > 0 ? '+' : ''}{total}{total !== 0 ? ' (±0にしてください)' : ' OK'}
+                    </Text>
+                  );
+                })()}
                 <TouchableOpacity style={[styles.recordButton, styles.scoreButton]} onPress={handleRecordScore}>
                   <Text style={styles.recordButtonText}>スコアを記録</Text>
                 </TouchableOpacity>
@@ -347,6 +355,14 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     />
                   ))}
                 </View>
+                {(() => {
+                  const total = chipValues.reduce((sum, v) => sum + v, 0);
+                  return (
+                    <Text style={[styles.totalPreview, total !== 0 ? styles.totalPreviewError : null]}>
+                      合計: {total > 0 ? '+' : ''}{total}{total !== 0 ? ' (±0にしてください)' : ' OK'}
+                    </Text>
+                  );
+                })()}
                 <TouchableOpacity
                   style={[styles.recordButton, styles.chipButton]}
                   onPress={handleRecordChip}
@@ -526,6 +542,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  totalPreview: {
+    fontSize: 12,
+    color: '#28a745',
+    textAlign: 'right',
+    marginTop: 8,
+  },
+  totalPreviewError: {
+    color: '#dc3545',
   },
   recordButton: {
     backgroundColor: '#2a5298',
