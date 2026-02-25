@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   Dimensions,
   FlatList,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -78,121 +79,22 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
   ];
 
-  const guideMockups: React.ReactNode[] = [
-    // 1: セットアップ画面
-    <View style={g.phone}>
-      <View style={g.phoneHeader}><Text style={g.phTitle}>🀄 麻雀スコアシート</Text></View>
-      <View style={g.phoneBody}>
-        <View style={g.miniCard}>
-          <Text style={g.miniLabel}>麻雀タイプ</Text>
-          <View style={g.miniRow}>
-            <View style={[g.miniTypeBtn, g.miniTypeBtnActive]}><Text style={g.miniTypeTxtA}>🀄 4人麻雀</Text></View>
-            <View style={g.miniTypeBtn}><Text style={g.miniTypeTxt}>🎴 3人麻雀</Text></View>
-          </View>
-          <Text style={g.miniLabel}>プレイヤー設定</Text>
-          <View style={g.miniRow}>
-            <View style={g.miniInput}><Text style={g.miniInputTxt}>太郎</Text></View>
-            <View style={g.miniInput}><Text style={g.miniInputTxt}>花子</Text></View>
-          </View>
-          <View style={g.miniRow}>
-            <View style={g.miniInput}><Text style={g.miniInputTxt}>次郎</Text></View>
-            <View style={g.miniInput}><Text style={g.miniInputTxt}>美咲</Text></View>
-          </View>
-          <View style={g.miniBtn}><Text style={g.miniBtnTxt}>ゲーム開始</Text></View>
-        </View>
-      </View>
-    </View>,
-    // 2: スコア記録画面
-    <View style={g.phone}>
-      <View style={g.phoneHeaderGame}>
-        <Text style={g.phGameTitle}>第1半荘</Text>
-        <View style={g.miniRow}>
-          <View style={g.miniSuspendBtn}><Text style={g.miniSmTxt}>中断</Text></View>
-          <View style={g.miniFinishBtn}><Text style={g.miniSmTxt}>ゲーム終了</Text></View>
-        </View>
-      </View>
-      <View style={g.phoneBody}>
-        <View style={g.miniCard}>
-          <Text style={g.miniSectionTitle}>🀄 ポイント入力</Text>
-          <View style={g.miniRow}>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>太郎</Text><Text style={g.miniScoreVal}>+32</Text></View>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>花子</Text><Text style={g.miniScoreValNeg}>-15</Text></View>
-          </View>
-          <View style={g.miniRow}>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>次郎</Text><Text style={g.miniScoreValNeg}>-8</Text></View>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>美咲</Text><Text style={g.miniScoreValNeg}>-9</Text></View>
-          </View>
-          <View style={g.miniRecordBtn}><Text style={g.miniBtnTxt}>スコアを記録</Text></View>
-        </View>
-      </View>
-    </View>,
-    // 3: チップ記録
-    <View style={g.phone}>
-      <View style={g.phoneHeaderGame}>
-        <Text style={g.phGameTitle}>第2半荘</Text>
-        <View style={g.miniRow}>
-          <View style={g.miniSuspendBtn}><Text style={g.miniSmTxt}>中断</Text></View>
-          <View style={g.miniFinishBtn}><Text style={g.miniSmTxt}>ゲーム終了</Text></View>
-        </View>
-      </View>
-      <View style={g.phoneBody}>
-        <View style={g.miniCard}>
-          <Text style={g.miniSectionTitle}>🎉 チップ移動</Text>
-          <View style={g.miniRow}>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>太郎</Text><Text style={g.miniScoreVal}>+3</Text></View>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>花子</Text><Text style={g.miniScoreValNeg}>-1</Text></View>
-          </View>
-          <View style={g.miniRow}>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>次郎</Text><Text style={g.miniScoreValNeg}>-1</Text></View>
-            <View style={g.miniScoreBox}><Text style={g.miniScoreLabel}>美咲</Text><Text style={g.miniScoreValNeg}>-1</Text></View>
-          </View>
-          <View style={g.miniChipBtn}><Text style={g.miniBtnTxt}>チップを記録</Text></View>
-        </View>
-      </View>
-    </View>,
-    // 4: 中断・終了
-    <View style={g.phone}>
-      <View style={g.phoneHeaderGame}>
-        <Text style={g.phGameTitle}>第3半荘</Text>
-        <View style={g.miniRow}>
-          <View style={[g.miniSuspendBtn, g.miniHighlight]}><Text style={g.miniSmTxt}>中断</Text></View>
-          <View style={[g.miniFinishBtn, g.miniHighlight]}><Text style={g.miniSmTxt}>ゲーム終了</Text></View>
-        </View>
-      </View>
-      <View style={g.phoneBody}>
-        <View style={g.miniCard}>
-          <Text style={g.miniSectionTitle}>総合スコア</Text>
-          <View style={g.miniRankRow}>
-            <Text style={g.miniRankGold}>🥇 太郎  +45</Text>
-          </View>
-          <View style={g.miniRankRow}>
-            <Text style={g.miniRankSilver}>🥈 花子  +12</Text>
-          </View>
-          <View style={g.miniRankRow}>
-            <Text style={g.miniRankNormal}>🥉 次郎  -20</Text>
-          </View>
-          <View style={g.miniRankRow}>
-            <Text style={g.miniRankNormal}>4位 美咲  -37</Text>
-          </View>
-        </View>
-      </View>
-    </View>,
-    // 5: 共有
-    <View style={g.phone}>
-      <View style={g.phoneHeaderReadOnly}>
-        <Text style={g.miniBackBtn}>← 戻る</Text>
-        <Text style={g.phReadOnlyDate}>2026/02/16</Text>
-        <View style={[g.miniShareBtn, g.miniHighlight]}><Text style={g.miniSmTxt}>共有</Text></View>
-      </View>
-      <View style={g.phoneBody}>
-        <View style={g.miniCard}>
-          <Text style={g.miniSectionTitle}>共有コード</Text>
-          <View style={g.miniCodeBox}><Text style={g.miniCodeTxt}>eyJ2IjoxLCJwYyI6NC wiZCI...</Text></View>
-          <View style={g.miniShareSendBtn}><Text style={g.miniBtnTxt}>送信する</Text></View>
-        </View>
-      </View>
-    </View>,
+  const mockupImages = [
+    require('../assets/promo_1_setup.png'),
+    require('../assets/promo_2_score.png'),
+    require('../assets/promo_3_summary.png'),
+    require('../assets/promo_4_past_games.png'),
+    require('../assets/promo_5_share.png'),
   ];
+
+  const guideMockups: React.ReactNode[] = mockupImages.map((src, i) => (
+    <Image
+      key={i}
+      source={src}
+      style={g.mockupImage}
+      resizeMode="contain"
+    />
+  ));
 
   useEffect(() => {
     const finished = getFinishedGames();
@@ -891,242 +793,11 @@ const styles = StyleSheet.create({
 
 // ガイド内モックアップ用スタイル
 const g = StyleSheet.create({
-  phone: {
+  mockupImage: {
     width: '85%',
+    height: undefined,
+    aspectRatio: 1242 / 2688,
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#ccc',
-    backgroundColor: '#f0f0f0',
-    overflow: 'hidden',
     marginBottom: 14,
-  },
-  phoneHeader: {
-    backgroundColor: '#1e3c72',
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  phTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  phoneHeaderGame: {
-    backgroundColor: '#1e3c72',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  phGameTitle: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  phoneHeaderReadOnly: {
-    backgroundColor: '#1e3c72',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  miniBackBtn: {
-    color: '#fff',
-    fontSize: 9,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  phReadOnlyDate: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  phoneBody: {
-    padding: 8,
-  },
-  miniCard: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 8,
-  },
-  miniLabel: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#1e3c72',
-    marginBottom: 4,
-  },
-  miniRow: {
-    flexDirection: 'row',
-    gap: 4,
-    marginBottom: 4,
-  },
-  miniTypeBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 4,
-    paddingVertical: 4,
-    alignItems: 'center',
-  },
-  miniTypeBtnActive: {
-    backgroundColor: '#2a5298',
-    borderColor: '#2a5298',
-  },
-  miniTypeTxt: {
-    fontSize: 8,
-    color: '#666',
-    fontWeight: 'bold',
-  },
-  miniTypeTxtA: {
-    fontSize: 8,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  miniInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 3,
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-    backgroundColor: '#fff',
-  },
-  miniInputTxt: {
-    fontSize: 8,
-    color: '#333',
-  },
-  miniBtn: {
-    backgroundColor: '#2a5298',
-    borderRadius: 4,
-    paddingVertical: 5,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  miniBtnTxt: {
-    color: '#fff',
-    fontSize: 8,
-    fontWeight: 'bold',
-  },
-  miniSectionTitle: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#1e3c72',
-    marginBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a5298',
-    paddingBottom: 3,
-  },
-  miniScoreBox: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 4,
-    padding: 4,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  miniScoreLabel: {
-    fontSize: 7,
-    color: '#666',
-  },
-  miniScoreVal: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#28a745',
-  },
-  miniScoreValNeg: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#dc3545',
-  },
-  miniRecordBtn: {
-    backgroundColor: '#28a745',
-    borderRadius: 4,
-    paddingVertical: 5,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  miniChipBtn: {
-    backgroundColor: '#ffc107',
-    borderRadius: 4,
-    paddingVertical: 5,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  miniSuspendBtn: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  miniFinishBtn: {
-    backgroundColor: '#dc3545',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-  },
-  miniSmTxt: {
-    color: '#fff',
-    fontSize: 8,
-    fontWeight: 'bold',
-  },
-  miniHighlight: {
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 6,
-    borderWidth: 1.5,
-    borderColor: '#FFD700',
-  },
-  miniRankRow: {
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  miniRankGold: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#b8860b',
-  },
-  miniRankSilver: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#6c757d',
-  },
-  miniRankNormal: {
-    fontSize: 9,
-    color: '#333',
-  },
-  miniShareBtn: {
-    backgroundColor: '#2a5298',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-  },
-  miniCodeBox: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 4,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 4,
-  },
-  miniCodeTxt: {
-    fontSize: 7,
-    color: '#666',
-    fontFamily: 'monospace',
-  },
-  miniShareSendBtn: {
-    backgroundColor: '#2a5298',
-    borderRadius: 4,
-    paddingVertical: 5,
-    alignItems: 'center',
   },
 });
