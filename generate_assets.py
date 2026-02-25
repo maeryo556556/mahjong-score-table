@@ -256,11 +256,11 @@ def generate_icon(output_path, size=1024):
     score_font_size = int(sheet_h * 0.11)
     img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h, score_font_size=score_font_size)
 
-    # Draw mahjong tile at bottom-right corner of score sheet, larger
-    tile_w = int(size * 0.22)
-    tile_h = int(size * 0.27)
-    tile_cx = sheet_x + sheet_w - int(size * 0.02)
-    tile_cy = sheet_y + sheet_h - int(size * 0.02)
+    # Draw mahjong tile at bottom-right corner, large and overlapping score sheet
+    tile_w = int(size * 0.35)
+    tile_h = int(size * 0.43)
+    tile_cx = sheet_x + sheet_w - int(size * 0.06)
+    tile_cy = sheet_y + sheet_h - int(size * 0.06)
     img = draw_mahjong_tile(img, tile_cx, tile_cy, tile_w, tile_h, rotation=15)
 
     img.save(output_path, 'PNG')
@@ -285,11 +285,11 @@ def generate_adaptive_icon(output_path, size=1024):
     img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h,
                            num_rows=6, num_cols=6, score_font_size=score_font_size)
 
-    # Draw mahjong tile at bottom-right corner of score sheet, larger
-    tile_w = int(size * 0.17)
-    tile_h = int(size * 0.21)
-    tile_cx = sheet_x + sheet_w - int(size * 0.02)
-    tile_cy = sheet_y + sheet_h - int(size * 0.02)
+    # Draw mahjong tile at bottom-right corner, large and overlapping score sheet
+    tile_w = int(size * 0.27)
+    tile_h = int(size * 0.33)
+    tile_cx = sheet_x + sheet_w - int(size * 0.04)
+    tile_cy = sheet_y + sheet_h - int(size * 0.04)
     img = draw_mahjong_tile(img, tile_cx, tile_cy, tile_w, tile_h, rotation=15)
 
     img.save(output_path, 'PNG')
@@ -316,11 +316,11 @@ def generate_splash(output_path, width=1284, height=2778):
                            num_rows=6, num_cols=6, score_font_size=score_font_size)
     draw = ImageDraw.Draw(img)
 
-    # Draw mahjong tile at bottom-right corner of score sheet, larger
-    tile_w = int(width * 0.14)
-    tile_h = int(tile_w * 1.2)
-    tile_cx = sheet_x + sheet_w - int(width * 0.02)
-    tile_cy = sheet_y + sheet_h - int(width * 0.02)
+    # Draw mahjong tile at bottom-right corner, large and overlapping score sheet
+    tile_w = int(width * 0.22)
+    tile_h = int(tile_w * 1.23)
+    tile_cx = sheet_x + sheet_w - int(width * 0.04)
+    tile_cy = sheet_y + sheet_h - int(width * 0.04)
     img = draw_mahjong_tile(img, tile_cx, tile_cy, tile_w, tile_h, rotation=15)
 
     # App name text below the sheet
@@ -373,11 +373,11 @@ def generate_favicon(output_path, size=48):
     img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h,
                            num_rows=5, num_cols=5, score_font_size=score_font_size)
 
-    # Tile at bottom-right corner of score sheet, larger
-    tile_w = int(render_size * 0.22)
-    tile_h = int(render_size * 0.27)
-    tile_cx = sheet_x + sheet_w - int(render_size * 0.02)
-    tile_cy = sheet_y + sheet_h - int(render_size * 0.02)
+    # Tile at bottom-right corner, large and overlapping score sheet
+    tile_w = int(render_size * 0.35)
+    tile_h = int(render_size * 0.43)
+    tile_cx = sheet_x + sheet_w - int(render_size * 0.06)
+    tile_cy = sheet_y + sheet_h - int(render_size * 0.06)
     img = draw_mahjong_tile(img, tile_cx, tile_cy, tile_w, tile_h, rotation=15)
 
     # Downscale with high quality
