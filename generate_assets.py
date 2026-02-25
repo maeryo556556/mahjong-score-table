@@ -387,6 +387,479 @@ def generate_favicon(output_path, size=48):
     print(f"Generated: {output_path} ({size}x{size})")
 
 
+def draw_phone_frame(img, x, y, pw, ph, corner_radius=40, bezel=6):
+    """Draw a phone frame outline and return the screen area coordinates."""
+    draw = ImageDraw.Draw(img)
+
+    # Phone outer shadow
+    shadow_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow_layer)
+    sd.rounded_rectangle(
+        (x + 10, y + 10, x + pw + 10, y + ph + 10),
+        radius=corner_radius, fill=(0, 0, 0, 70)
+    )
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(25))
+    img = Image.alpha_composite(img, shadow_layer)
+    draw = ImageDraw.Draw(img)
+
+    # Phone body (dark frame)
+    draw.rounded_rectangle(
+        (x, y, x + pw, y + ph),
+        radius=corner_radius, fill=(20, 20, 25), outline=(60, 60, 65), width=2
+    )
+
+    # Screen area inside bezel
+    sx = x + bezel
+    sy = y + bezel
+    sw = pw - bezel * 2
+    sh = ph - bezel * 2
+    screen_radius = corner_radius - bezel
+
+    return img, (sx, sy, sw, sh, screen_radius)
+
+
+def draw_app_screen(img, sx, sy, sw, sh, screen_radius):
+    """Draw a simulated app game screen inside the phone screen area."""
+    draw = ImageDraw.Draw(img)
+
+    # Screen background - app header gradient
+    screen_img = Image.new('RGBA', (sw, sh), (0, 0, 0, 0))
+    draw_gradient_bg(screen_img, BG_DARK, BG_MED)
+
+    # Create rounded mask for screen
+    screen_mask = Image.new('L', (sw, sh), 0)
+    sm = ImageDraw.Draw(screen_mask)
+    sm.rounded_rectangle((0, 0, sw - 1, sh - 1), radius=screen_radius, fill=255)
+
+    # Paste screen background
+    img.paste(screen_img, (sx, sy), screen_mask)
+    draw = ImageDraw.Draw(img)
+
+    # --- Status bar ---
+    status_h = int(sh * 0.028)
+    status_y = sy + int(sh * 0.008)
+    status_font = ImageFont.truetype(FONT_BOLD, int(status_h * 0.7))
+    draw.text((sx + int(sw * 0.06), status_y), "9:41", fill=WHITE, font=status_font)
+
+    # Battery icon area (right side)
+    bat_y = status_y + int(status_h * 0.15)
+    bat_w_px = int(sw * 0.06)
+    bat_h_px = int(status_h * 0.55)
+    bat_x = sx + sw - int(sw * 0.08)
+    draw.rounded_rectangle(
+        (bat_x, bat_y, bat_x + bat_w_px, bat_y + bat_h_px),
+        radius=2, fill=WHITE
+    )
+
+    # --- App header ---
+    header_top = sy + int(sh * 0.04)
+    header_h = int(sh * 0.045)
+    header_font_size = int(header_h * 0.65)
+    header_font = ImageFont.truetype(FONT_JP, header_font_size)
+    header_text = "第3半荘"
+    bbox = draw.textbbox((0, 0), header_text, font=header_font)
+    htw = bbox[2] - bbox[0]
+    draw.text((sx + (sw - htw) // 2, header_top), header_text, fill=WHITE, font=header_font)
+
+    # --- Content area ---
+    content_top = header_top + header_h + int(sh * 0.01)
+    content_left = sx + int(sw * 0.035)
+    content_right = sx + sw - int(sw * 0.035)
+    content_w = content_right - content_left
+
+    # --- Section: ポイント入力 ---
+    section_y = content_top
+    section_font_size = int(sh * 0.019)
+    section_font = ImageFont.truetype(FONT_JP, section_font_size)
+
+    # Section title bar
+    card_pad = int(sw * 0.03)
+    card_h_title = int(sh * 0.032)
+    draw.rounded_rectangle(
+        (content_left, section_y, content_right, section_y + card_h_title),
+        radius=8, fill=(255, 255, 255, 35)
+    )
+    # Use text markers instead of emoji (which may render as tofu)
+    draw.text(
+        (content_left + card_pad, section_y + int(card_h_title * 0.15)),
+        "ポイント入力", fill=WHITE, font=section_font
+    )
+
+    # --- Player input cards (2x2 grid) ---
+    card_gap = int(sw * 0.02)
+    card_top = section_y + card_h_title + card_gap
+    card_w = (content_w - card_gap) // 2
+    card_h = int(sh * 0.095)
+
+    players = [
+        ("プレイヤー1", "+32"),
+        ("プレイヤー2", "-15"),
+        ("プレイヤー3", "+8"),
+        ("プレイヤー4", "-25"),
+    ]
+    player_colors = [
+        (40, 167, 69),    # green
+        (220, 53, 69),    # red
+        (40, 167, 69),    # green
+        (220, 53, 69),    # red
+    ]
+
+    name_font = ImageFont.truetype(FONT_JP, int(sh * 0.016))
+    score_input_font = ImageFont.truetype(FONT_BOLD, int(sh * 0.028))
+    small_btn_font = ImageFont.truetype(FONT_BOLD, int(sh * 0.012))
+
+    for i, (pname, pscore) in enumerate(players):
+        col = i % 2
+        row = i // 2
+        cx = content_left + col * (card_w + card_gap)
+        cy = card_top + row * (card_h + card_gap)
+
+        # Card background
+        draw.rounded_rectangle(
+            (cx, cy, cx + card_w, cy + card_h),
+            radius=10, fill=WHITE, outline=(220, 225, 235), width=2
+        )
+
+        # Player name
+        draw.text(
+            (cx + card_pad, cy + int(card_h * 0.06)),
+            pname, fill=(80, 80, 80), font=name_font
+        )
+
+        # Score value centered
+        bbox = draw.textbbox((0, 0), pscore, font=score_input_font)
+        score_tw = bbox[2] - bbox[0]
+        draw.text(
+            (cx + (card_w - score_tw) // 2, cy + int(card_h * 0.32)),
+            pscore, fill=player_colors[i], font=score_input_font
+        )
+
+        # +/- buttons row
+        btn_y = cy + int(card_h * 0.73)
+        btn_h = int(card_h * 0.18)
+        btn_w_unit = int(card_w * 0.2)
+        btn_labels = ["-10", "-1", "+1", "+10"]
+        btn_colors = [(220, 53, 69), (220, 53, 69), (40, 167, 69), (40, 167, 69)]
+        for j, (bl, bc) in enumerate(zip(btn_labels, btn_colors)):
+            bx = cx + int(card_pad * 0.5) + j * (btn_w_unit + int(card_pad * 0.3))
+            draw.rounded_rectangle(
+                (bx, btn_y, bx + btn_w_unit, btn_y + btn_h),
+                radius=4, fill=bc
+            )
+            bbox = draw.textbbox((0, 0), bl, font=small_btn_font)
+            blw = bbox[2] - bbox[0]
+            draw.text(
+                (bx + (btn_w_unit - blw) // 2, btn_y + 1),
+                bl, fill=WHITE, font=small_btn_font
+            )
+
+    # --- Total row ---
+    total_y = card_top + 2 * (card_h + card_gap) + int(card_gap * 0.2)
+    total_h = int(sh * 0.028)
+    draw.rounded_rectangle(
+        (content_left, total_y, content_right, total_y + total_h),
+        radius=8, fill=WHITE, outline=(220, 225, 235), width=2
+    )
+    total_font = ImageFont.truetype(FONT_JP, int(sh * 0.015))
+    draw.text(
+        (content_left + card_pad, total_y + int(total_h * 0.15)),
+        "合計:  ±0", fill=(40, 167, 69), font=total_font
+    )
+
+    # --- Record button ---
+    btn_top = total_y + total_h + card_gap
+    btn_h_rec = int(sh * 0.035)
+    draw.rounded_rectangle(
+        (content_left, btn_top, content_right, btn_top + btn_h_rec),
+        radius=10, fill=(30, 60, 114)
+    )
+    rec_font = ImageFont.truetype(FONT_JP, int(sh * 0.017))
+    rec_text = "スコアを記録"
+    bbox = draw.textbbox((0, 0), rec_text, font=rec_font)
+    rtw = bbox[2] - bbox[0]
+    draw.text(
+        (sx + (sw - rtw) // 2, btn_top + int(btn_h_rec * 0.2)),
+        rec_text, fill=WHITE, font=rec_font
+    )
+
+    # --- Summary section ---
+    summary_top = btn_top + btn_h_rec + card_gap * 2
+    draw.rounded_rectangle(
+        (content_left, summary_top, content_right, summary_top + card_h_title),
+        radius=8, fill=(255, 255, 255, 35)
+    )
+    draw.text(
+        (content_left + card_pad, summary_top + int(card_h_title * 0.15)),
+        "総合スコア", fill=WHITE, font=section_font
+    )
+
+    # Summary cards (2x2)
+    sum_top = summary_top + card_h_title + card_gap
+    sum_card_h = int(sh * 0.07)
+    summary_data = [
+        ("プレイヤー1", "+87", "1位", (255, 215, 0)),
+        ("プレイヤー2", "+23", "2位", (192, 192, 192)),
+        ("プレイヤー3", "-42", "3位", (205, 127, 50)),
+        ("プレイヤー4", "-68", "4位", (149, 165, 166)),
+    ]
+
+    sum_name_font = ImageFont.truetype(FONT_JP, int(sh * 0.014))
+    sum_score_font = ImageFont.truetype(FONT_BOLD, int(sh * 0.022))
+    rank_font = ImageFont.truetype(FONT_JP, int(sh * 0.013))
+
+    for i, (sname, sscore, rank, accent) in enumerate(summary_data):
+        col = i % 2
+        row = i // 2
+        cx = content_left + col * (card_w + card_gap)
+        cy = sum_top + row * (sum_card_h + card_gap)
+
+        # Card with left accent border
+        draw.rounded_rectangle(
+            (cx, cy, cx + card_w, cy + sum_card_h),
+            radius=10, fill=WHITE, outline=(220, 225, 235), width=2
+        )
+        # Left accent bar
+        draw.rounded_rectangle(
+            (cx, cy + 4, cx + 5, cy + sum_card_h - 4),
+            radius=2, fill=accent
+        )
+
+        # Rank + name
+        draw.text(
+            (cx + card_pad + 4, cy + int(sum_card_h * 0.08)),
+            f"{rank} {sname}", fill=(80, 80, 80), font=sum_name_font
+        )
+
+        # Score
+        scolor = (40, 167, 69) if sscore.startswith("+") else (220, 53, 69)
+        bbox = draw.textbbox((0, 0), sscore, font=sum_score_font)
+        stw = bbox[2] - bbox[0]
+        draw.text(
+            (cx + (card_w - stw) // 2, cy + int(sum_card_h * 0.45)),
+            sscore, fill=scolor, font=sum_score_font
+        )
+
+    # --- History section ---
+    hist_top = sum_top + 2 * (sum_card_h + card_gap) + card_gap
+    draw.rounded_rectangle(
+        (content_left, hist_top, content_right, hist_top + card_h_title),
+        radius=8, fill=(255, 255, 255, 35)
+    )
+    draw.text(
+        (content_left + card_pad, hist_top + int(card_h_title * 0.15)),
+        "記録履歴", fill=WHITE, font=section_font
+    )
+
+    # History table
+    table_top = hist_top + card_h_title + card_gap
+    table_bottom = sy + sh - int(sh * 0.02)
+    table_h = table_bottom - table_top
+
+    # Table background
+    draw.rounded_rectangle(
+        (content_left, table_top, content_right, table_bottom),
+        radius=10, fill=WHITE, outline=(220, 225, 235), width=2
+    )
+
+    # Table header
+    th_h = int(table_h * 0.12)
+    th_font = ImageFont.truetype(FONT_JP, int(sh * 0.012))
+    draw.rectangle(
+        (content_left + 1, table_top + 1, content_right - 1, table_top + th_h),
+        fill=(235, 240, 250)
+    )
+    draw.line(
+        [(content_left, table_top + th_h), (content_right, table_top + th_h)],
+        fill=(200, 210, 225), width=1
+    )
+
+    # Column headers
+    cols = ["", "P1", "P2", "P3", "P4"]
+    col_w_unit = content_w // 5
+    for j, col_name in enumerate(cols):
+        cx_t = content_left + j * col_w_unit + col_w_unit // 2
+        bbox = draw.textbbox((0, 0), col_name, font=th_font)
+        cw = bbox[2] - bbox[0]
+        draw.text((cx_t - cw // 2, table_top + int(th_h * 0.25)),
+                   col_name, fill=(80, 100, 140), font=th_font)
+
+    # Table rows
+    hist_data = [
+        ("第1半荘", ["+12", "-8", "+20", "-24"]),
+        ("第2半荘", ["+43", "-30", "-20", "+7"]),
+        ("第3半荘", ["+32", "-15", "+8", "-25"]),
+    ]
+    row_h_t = int((table_h - th_h) / max(len(hist_data), 1))
+    row_font = ImageFont.truetype(FONT_JP, int(sh * 0.011))
+    val_font = ImageFont.truetype(FONT_BOLD, int(sh * 0.013))
+
+    for r, (label, vals) in enumerate(hist_data):
+        ry = table_top + th_h + r * row_h_t
+
+        # Alternating row bg
+        if r % 2 == 0:
+            draw.rectangle(
+                (content_left + 1, ry, content_right - 1, ry + row_h_t),
+                fill=(245, 248, 255)
+            )
+
+        # Row line
+        if r > 0:
+            draw.line(
+                [(content_left + 4, ry), (content_right - 4, ry)],
+                fill=(230, 235, 245), width=1
+            )
+
+        # Label
+        bbox = draw.textbbox((0, 0), label, font=row_font)
+        lw = bbox[2] - bbox[0]
+        draw.text(
+            (content_left + col_w_unit // 2 - lw // 2, ry + int(row_h_t * 0.3)),
+            label, fill=(80, 100, 140), font=row_font
+        )
+
+        # Values
+        for j, val in enumerate(vals):
+            vcolor = (40, 167, 69) if val.startswith("+") else (220, 53, 69)
+            bbox = draw.textbbox((0, 0), val, font=val_font)
+            vw = bbox[2] - bbox[0]
+            vx = content_left + (j + 1) * col_w_unit + col_w_unit // 2 - vw // 2
+            draw.text((vx, ry + int(row_h_t * 0.25)), val, fill=vcolor, font=val_font)
+
+    return img
+
+
+def generate_promo(output_path, width=1242, height=2688):
+    """Generate App Store promotional screenshot image."""
+    img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+
+    # Background gradient (darker, richer)
+    draw_gradient_bg(img, (15, 30, 80), (25, 55, 120))
+
+    # Add subtle decorative elements - scattered translucent tiles in background
+    for tx, ty, ts, tr in [(100, 200, 60, 25), (width - 180, 350, 50, -20),
+                            (80, height - 500, 45, 30), (width - 150, height - 400, 55, -15),
+                            (width // 2 - 300, 150, 40, 10), (width // 2 + 250, height - 350, 48, -25)]:
+        deco = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(deco)
+        dd.rounded_rectangle(
+            (tx, ty, tx + ts, ty + int(ts * 1.25)),
+            radius=6, fill=(255, 255, 255, 15)
+        )
+        if tr != 0:
+            # Simple alpha composite (no rotation for perf)
+            pass
+        img = Image.alpha_composite(img, deco)
+
+    draw = ImageDraw.Draw(img)
+
+    # === TOP: App branding ===
+    top_margin = int(height * 0.04)
+
+    # App icon (small)
+    icon_size = int(width * 0.13)
+    icon_x = (width - icon_size) // 2
+    icon_y = top_margin
+
+    # Draw mini icon
+    icon_img = Image.new('RGBA', (icon_size, icon_size), (0, 0, 0, 0))
+    icon_bg = Image.new('RGBA', (icon_size, icon_size), (0, 0, 0, 0))
+    draw_gradient_bg(icon_bg, BG_DARK, BG_MED)
+    icon_mask = Image.new('L', (icon_size, icon_size), 0)
+    imd = ImageDraw.Draw(icon_mask)
+    imd.rounded_rectangle((0, 0, icon_size - 1, icon_size - 1), radius=int(icon_size * 0.22), fill=255)
+    icon_img.paste(icon_bg, (0, 0), icon_mask)
+
+    # Mini score sheet on icon
+    m_margin = int(icon_size * 0.12)
+    m_sw = int(icon_size * 0.76)
+    m_sh = int(icon_size * 0.68)
+    icon_img = draw_score_sheet(icon_img, m_margin, int(icon_size * 0.18), m_sw, m_sh,
+                                 num_rows=4, num_cols=4,
+                                 score_font_size=int(m_sh * 0.14))
+    # Mini tile on icon
+    mt_w = int(icon_size * 0.30)
+    mt_h = int(icon_size * 0.37)
+    icon_img = draw_mahjong_tile(icon_img,
+                                  m_margin + m_sw - int(icon_size * 0.04),
+                                  int(icon_size * 0.18) + m_sh - int(icon_size * 0.04),
+                                  mt_w, mt_h, rotation=15)
+    img.paste(icon_img, (icon_x, icon_y), icon_img)
+
+    # App name
+    app_name_y = icon_y + icon_size + int(height * 0.01)
+    app_name_font = ImageFont.truetype(FONT_JP, int(width * 0.06))
+    app_name = "麻雀スコアシート"
+    bbox = draw.textbbox((0, 0), app_name, font=app_name_font)
+    anw = bbox[2] - bbox[0]
+    draw.text(((width - anw) // 2, app_name_y), app_name, fill=WHITE, font=app_name_font)
+
+    # Subtitle
+    app_sub_font = ImageFont.truetype(FONT_JP, int(width * 0.028))
+    app_sub = "モバイル"
+    bbox = draw.textbbox((0, 0), app_sub, font=app_sub_font)
+    asw = bbox[2] - bbox[0]
+    sub_y = app_name_y + int(width * 0.072)
+    draw.text(((width - asw) // 2, sub_y), app_sub, fill=(180, 200, 230), font=app_sub_font)
+
+    # === HEADLINE ===
+    headline_y = sub_y + int(height * 0.025)
+    headline_font = ImageFont.truetype(FONT_JP, int(width * 0.05))
+
+    hl1 = "麻雀のスコア管理を"
+    bbox = draw.textbbox((0, 0), hl1, font=headline_font)
+    hl1w = bbox[2] - bbox[0]
+    draw.text(((width - hl1w) // 2, headline_y), hl1, fill=WHITE, font=headline_font)
+
+    hl2 = "もっとスマートに"
+    bbox = draw.textbbox((0, 0), hl2, font=headline_font)
+    hl2w = bbox[2] - bbox[0]
+    hl2_y = headline_y + int(width * 0.065)
+    draw.text(((width - hl2w) // 2, hl2_y), hl2, fill=(100, 200, 255), font=headline_font)
+
+    # === PHONE MOCKUP ===
+    phone_w = int(width * 0.72)
+    phone_h = int(phone_w * 1.78)
+    phone_x = (width - phone_w) // 2
+    phone_y = hl2_y + int(height * 0.03)
+
+    img, (scr_x, scr_y, scr_w, scr_h, scr_r) = draw_phone_frame(
+        img, phone_x, phone_y, phone_w, phone_h,
+        corner_radius=int(phone_w * 0.06), bezel=int(phone_w * 0.012)
+    )
+
+    # Draw simulated app screen
+    img = draw_app_screen(img, scr_x, scr_y, scr_w, scr_h, scr_r)
+
+    # Recreate draw object since phone_frame/app_screen may have replaced img
+    draw = ImageDraw.Draw(img)
+
+    # === BOTTOM: Feature highlights ===
+    bottom_y = phone_y + phone_h + int(height * 0.018)
+    feat_font = ImageFont.truetype(FONT_JP, int(width * 0.032))
+
+    features = [
+        ("3人・4人麻雀対応", (100, 200, 255)),
+        ("チップ移動もかんたん記録", (130, 220, 180)),
+        ("ゲーム共有・取り込み対応", (200, 180, 255)),
+    ]
+
+    for i, (feat, fcolor) in enumerate(features):
+        fy = bottom_y + i * int(height * 0.028)
+        bbox = draw.textbbox((0, 0), feat, font=feat_font)
+        fw = bbox[2] - bbox[0]
+        # Bullet dot
+        dot_x = (width - fw) // 2 - int(width * 0.04)
+        draw.ellipse(
+            (dot_x, fy + int(width * 0.012), dot_x + int(width * 0.015), fy + int(width * 0.027)),
+            fill=fcolor
+        )
+        draw.text(((width - fw) // 2, fy), feat, fill=WHITE, font=feat_font)
+
+    img.save(output_path, 'PNG')
+    print(f"Generated: {output_path} ({width}x{height})")
+
+
 if __name__ == '__main__':
     import os
     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
@@ -395,5 +868,6 @@ if __name__ == '__main__':
     generate_adaptive_icon(os.path.join(assets_dir, 'adaptive-icon.png'))
     generate_splash(os.path.join(assets_dir, 'splash.png'))
     generate_favicon(os.path.join(assets_dir, 'favicon.png'))
+    generate_promo(os.path.join(assets_dir, 'promo.png'))
 
     print("\nAll assets generated successfully!")
