@@ -375,30 +375,23 @@ class PhoneScreen:
             d.text((x + w - tw, y + self._s(4)), has_right, fill=GREEN, font=f_right)
         return line_y + self._s(8)
 
-    def draw_drumroll_input(self, x, y, label, value, positive=True):
+    def draw_drumroll_input(self, x, y, label, value, box_w=None):
         """Draw a DrumRollInput component matching DrumRollInput.tsx exactly."""
         d = self.draw
-        box_w = self._s(155)
+        if box_w is None:
+            box_w = self._s(155)
         # Label
         lf = font(self._s(12), jp=True)
         d.text((x, y), label, fill=DARK_TEXT, font=lf)
         y += self._s(18)
 
-        # Top buttons row: -10, -1, +1, +10
         btn_h = self._s(26)
         btn_gap = self._s(4)
-        btn_w = (box_w - 3 * btn_gap) // 4
-        top_labels = ["+10", "+1", "-1", "-10"]  # top row is increase/decrease
         bf = font(self._s(11), bold=True)
-        # Actually in the app: top row has +10, +1; bottom row has -1, -10
-        # Let me match exactly: top row = [+10, +1], bottom row = [-1, -10]
-        # But each row has 2 buttons side by side
-        # Actually the DrumRollInput has: top row 2 buttons, display, bottom row 2 buttons
-        # Top: [+10] [+1]
-        # Display: value
-        # Bottom: [-1] [-10]
-        top_btns = [("+10", GREEN), ("+1", GREEN)]
-        for i, (bl, bc) in enumerate(top_btns):
+
+        # Top row: [+10] [+1]
+        top_btns = ["+10", "+1"]
+        for i, bl in enumerate(top_btns):
             bx = x + i * (box_w // 2 + btn_gap // 2)
             bw = box_w // 2 - btn_gap // 2
             rrect(d, (bx, y, bx + bw, y + btn_h), self._s(4),
@@ -420,9 +413,9 @@ class PhoneScreen:
                fill=val_color, font=vf)
         y += disp_h + btn_gap
 
-        # Bottom buttons
-        bot_btns = [("-1", RED), ("-10", RED)]
-        for i, (bl, bc) in enumerate(bot_btns):
+        # Bottom row: [-1] [-10]
+        bot_btns = ["-1", "-10"]
+        for i, bl in enumerate(bot_btns):
             bx = x + i * (box_w // 2 + btn_gap // 2)
             bw = box_w // 2 - btn_gap // 2
             rrect(d, (bx, y, bx + bw, y + btn_h), self._s(4),
@@ -660,7 +653,7 @@ def generate_promo_score(output_path):
     cw = card_w - 2 * inner_pad
 
     # ── ポイント入力 Card ──
-    card_h = s(340)
+    card_h = s(390)
     ps.draw_card(card_x, card_y, card_w, card_h)
     d = ps.draw
     cy = card_y + inner_pad
@@ -669,16 +662,18 @@ def generate_promo_score(output_path):
 
     # DrumRoll inputs (2x2 grid)
     players_scores = [("太郎", 32), ("花子", -15), ("次郎", -8), ("美咲", -9)]
-    dr_w = (cw - s(8)) // 2
+    dr_gap = s(8)
+    dr_w = (cw - dr_gap) // 2
+    dr_row_h = s(120)
     for i, (name, val) in enumerate(players_scores):
         col = i % 2
         row = i // 2
-        dx = cx + col * (dr_w + s(8))
-        dy = cy + row * s(130)
-        ps.draw_drumroll_input(dx, dy, name, val)
+        dx = cx + col * (dr_w + dr_gap)
+        dy = cy + row * dr_row_h
+        ps.draw_drumroll_input(dx, dy, name, val, box_w=dr_w)
 
     # スコアを記録 button
-    btn_y = cy + 2 * s(130) + s(4)
+    btn_y = cy + 2 * dr_row_h + s(8)
     ps.draw_button(cx, btn_y, cw, s(42), "スコアを記録", GREEN)
 
     # ── チップ移動 Card (partial, below) ──
@@ -820,20 +815,26 @@ def generate_promo_summary(output_path):
         d.text((cx + s(8), ry + s(4)), label, fill=DARK_TEXT, font=label_f)
         d.text((cx + cw - s(60), ry + s(6)), "14:3" + str(ri), fill=GRAY_TEXT, font=time_f)
 
-        # Score cells (4 columns)
+        # Score cells (4 columns, centered within each cell)
         cell_w = cw // 4
         for ci, (pname, pval, prank) in enumerate(scores):
-            cell_x = cx + ci * cell_w + s(4)
+            cell_cx = cx + ci * cell_w + cell_w // 2  # center of cell
             cell_y = ry + s(24)
-            d.text((cell_x, cell_y), pname, fill=MED_TEXT, font=name_f)
-            # Rank badge
+            # Player name centered
+            ntw, _ = text_size(d, pname, name_f)
+            d.text((cell_cx - ntw // 2, cell_y), pname, fill=MED_TEXT, font=name_f)
+            # Rank badge centered
             rc = rank_colors.get(prank, RANK_GRAY)
             rtext = f"{prank}位"
-            rrect(d, (cell_x, cell_y + s(16), cell_x + s(24), cell_y + s(30)), s(6), fill=rc)
-            d.text((cell_x + s(4), cell_y + s(17)), rtext, fill=WHITE, font=rank_f)
-            # Value
+            rtw2, _ = text_size(d, rtext, rank_f)
+            badge_w = rtw2 + s(8)
+            rrect(d, (cell_cx - badge_w // 2, cell_y + s(16),
+                       cell_cx + badge_w // 2, cell_y + s(30)), s(6), fill=rc)
+            d.text((cell_cx - rtw2 // 2, cell_y + s(17)), rtext, fill=WHITE, font=rank_f)
+            # Value centered
             vc = GREEN if pval.startswith("+") else RED
-            d.text((cell_x, cell_y + s(34)), pval, fill=vc, font=val_f)
+            vtw, _ = text_size(d, pval, val_f)
+            d.text((cell_cx - vtw // 2, cell_y + s(34)), pval, fill=vc, font=val_f)
 
     phone_img = ps.get_image()
     promo = create_promo_frame(phone_img, "総合スコア & 履歴", "ランキングと全記録を一目で確認")
