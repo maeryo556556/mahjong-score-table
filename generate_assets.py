@@ -612,7 +612,7 @@ def generate_promo_setup(output_path):
     ps.draw_button(cx, by, cw, s(48), "ゲームを取り込む", TEAL)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "ゲームの始め方", "プレイヤー名を入力してすぐ開始")
+    promo = create_promo_frame(phone_img, "麻雀対戦スコア管理", "３麻４麻両対応！")
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
@@ -676,24 +676,24 @@ def generate_promo_score(output_path):
     btn_y = cy + 2 * dr_row_h + s(8)
     ps.draw_button(cx, btn_y, cw, s(42), "スコアを記録", GREEN)
 
-    # ── チップ移動 Card (partial, below) ──
+    # ── チップ移動 Card (showing first row of inputs) ──
     chip_y = card_y + card_h + s(16)
-    chip_h = s(110)
+    chip_h = s(170)
     ps.draw_card(card_x, chip_y, card_w, chip_h)
     d = ps.draw
     cy2 = chip_y + inner_pad
     ps.draw_section_title(cx, cy2, cw, "チップ移動", "合計: 0")
     d = ps.draw
-
-    # Show partial drum roll inputs
     cy2 += s(36)
-    for i, name in enumerate(["太郎", "花子"]):
-        dx2 = cx + i * (dr_w + s(8))
-        lf2 = font(s(12), jp=True)
-        d.text((dx2, cy2), name, fill=DARK_TEXT, font=lf2)
+
+    # Show first row of chip drum roll inputs (太郎, 花子)
+    chip_scores = [("太郎", 3), ("花子", -1)]
+    for i, (name, val) in enumerate(chip_scores):
+        dx2 = cx + i * (dr_w + dr_gap)
+        ps.draw_drumroll_input(dx2, cy2, name, val, box_w=dr_w)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "スコアの記録", "ドラムロール操作でかんたん入力")
+    promo = create_promo_frame(phone_img, "スコアの記録", "直感的なUIでかんたん入力")
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
