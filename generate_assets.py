@@ -465,14 +465,16 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IP
 
     # Title text
     if title_text:
-        tf = font(int(promo_w * 0.058), jp=True)
+        title_font_size = int(promo_w * 0.058)
+        tf = font(title_font_size, jp=True)
         draw_centered_text(draw, title_text, promo_w // 2, top_y, tf, WHITE)
-        top_y += int(promo_h * 0.035)
+        top_y += int(title_font_size * 1.4)
 
     if subtitle_text:
-        sf = font(int(promo_w * 0.032), jp=True)
+        sub_font_size = int(promo_w * 0.032)
+        sf = font(sub_font_size, jp=True)
         draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (160, 200, 255))
-        top_y += int(promo_h * 0.025)
+        top_y += int(sub_font_size * 1.4)
 
     # Device frame
     phone_w = int(promo_w * 0.82)
