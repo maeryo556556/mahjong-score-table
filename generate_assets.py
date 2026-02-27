@@ -3,7 +3,8 @@
 
 Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
-  - promo_1_setup.png ... promo_5_share.png (5 promotional screenshots)
+  - iphone/promo_1_setup.png ... promo_5_share.png (5 iPhone promotional screenshots)
+  - ipad/promo_1_setup.png ... promo_5_share.png (5 iPad promotional screenshots)
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -305,28 +306,41 @@ def generate_favicon(output_path, size=48):
 # Promotional Screenshots – accurate app mockups
 # ══════════════════════════════════════════════
 
-# Phone screen dimensions for promo images
-PHONE_W = 1080
-PHONE_H = 2340
-PROMO_W = 1242
-PROMO_H = 2688
+# ──────────────────────────────────────────────
+# Device configurations
+# ──────────────────────────────────────────────
+
+class DeviceConfig:
+    """Configuration for different device types."""
+    def __init__(self, screen_w, screen_h, promo_w, promo_h, base_dp, is_tablet=False):
+        self.screen_w = screen_w
+        self.screen_h = screen_h
+        self.promo_w = promo_w
+        self.promo_h = promo_h
+        self.base_dp = base_dp
+        self.is_tablet = is_tablet
+
+
+IPHONE = DeviceConfig(1080, 2340, 1242, 2688, 375, False)
+IPAD = DeviceConfig(1536, 2048, 2048, 2732, 590, True)
 
 
 class PhoneScreen:
     """Helper to draw pixel-accurate app screen mockups."""
 
-    def __init__(self, width=PHONE_W, height=PHONE_H):
-        self.w = width
-        self.h = height
-        self.img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    def __init__(self, config=IPHONE):
+        self.w = config.screen_w
+        self.h = config.screen_h
+        self.base_dp = config.base_dp
+        self.img = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 0))
         draw_gradient_bg(self.img, BG_DARK, BG_MED)
         self.draw = ImageDraw.Draw(self.img)
-        self.pad = int(width * 0.042)  # ~16px at 375dp
-        self.y = int(height * 0.02)    # start below status area
+        self.pad = int(self.w * 0.042)  # ~16px at 375dp
+        self.y = int(self.h * 0.02)     # start below status area
 
     def _s(self, dp):
         """Scale dp to pixels."""
-        return int(dp * self.w / 375)
+        return int(dp * self.w / self.base_dp)
 
     def draw_status_bar(self):
         """Draw iOS-style status bar."""
@@ -438,35 +452,43 @@ class PhoneScreen:
         return self.img
 
 
-def create_promo_frame(phone_img, title_text=None, subtitle_text=None):
-    """Wrap a phone screen image in a promo frame with title."""
-    img = Image.new('RGBA', (PROMO_W, PROMO_H), (0, 0, 0, 0))
+def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IPHONE):
+    """Wrap a phone/tablet screen image in a promo frame with title."""
+    promo_w, promo_h = config.promo_w, config.promo_h
+    screen_w, screen_h = config.screen_w, config.screen_h
+
+    img = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 0))
     draw_gradient_bg(img, (15, 30, 80), (25, 55, 120))
     draw = ImageDraw.Draw(img)
 
-    top_y = int(PROMO_H * 0.02)
+    top_y = int(promo_h * 0.02)
 
     # Title text
     if title_text:
-        tf = font(int(PROMO_W * 0.058), jp=True)
-        draw_centered_text(draw, title_text, PROMO_W // 2, top_y, tf, WHITE)
-        top_y += int(PROMO_H * 0.035)
+        tf = font(int(promo_w * 0.058), jp=True)
+        draw_centered_text(draw, title_text, promo_w // 2, top_y, tf, WHITE)
+        top_y += int(promo_h * 0.035)
 
     if subtitle_text:
-        sf = font(int(PROMO_W * 0.032), jp=True)
-        draw_centered_text(draw, subtitle_text, PROMO_W // 2, top_y, sf, (160, 200, 255))
-        top_y += int(PROMO_H * 0.025)
+        sf = font(int(promo_w * 0.032), jp=True)
+        draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (160, 200, 255))
+        top_y += int(promo_h * 0.025)
 
-    # Phone frame
-    phone_w = int(PROMO_W * 0.82)
-    phone_h = int(phone_w * PHONE_H / PHONE_W)
+    # Device frame
+    phone_w = int(promo_w * 0.82)
+    phone_h = int(phone_w * screen_h / screen_w)
     phone_scaled = phone_img.resize((phone_w, phone_h), Image.LANCZOS)
 
-    # Phone bezel
-    bezel = int(phone_w * 0.015)
-    corner_r = int(phone_w * 0.055)
-    px = (PROMO_W - phone_w) // 2 - bezel
-    py = top_y + int(PROMO_H * 0.01)
+    # Bezel dimensions (iPad has slightly thicker bezels, less rounded corners)
+    if config.is_tablet:
+        bezel = int(phone_w * 0.012)
+        corner_r = int(phone_w * 0.03)
+    else:
+        bezel = int(phone_w * 0.015)
+        corner_r = int(phone_w * 0.055)
+
+    px = (promo_w - phone_w) // 2 - bezel
+    py = top_y + int(promo_h * 0.01)
 
     # Shadow
     shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
@@ -479,7 +501,7 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None):
     img = Image.alpha_composite(img, shadow)
     draw = ImageDraw.Draw(img)
 
-    # Phone body
+    # Device body
     draw.rounded_rectangle(
         (px, py, px + phone_w + bezel * 2, py + phone_h + bezel * 2),
         radius=corner_r + bezel, fill=(20, 20, 25), outline=(60, 60, 65), width=2
@@ -500,9 +522,9 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None):
 
 # ── Promo 1: Setup Screen ──
 
-def generate_promo_setup(output_path):
+def generate_promo_setup(output_path, config=IPHONE):
     """Setup screen with type selection and player inputs."""
-    ps = PhoneScreen()
+    ps = PhoneScreen(config)
     d = ps.draw
     s = ps._s
     pad = ps.pad
@@ -612,16 +634,16 @@ def generate_promo_setup(output_path):
     ps.draw_button(cx, by, cw, s(48), "ゲームを取り込む", TEAL)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "麻雀対戦スコア管理", "３麻４麻両対応！")
+    promo = create_promo_frame(phone_img, "麻雀対戦スコア管理", "３麻４麻両対応！", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
 
 # ── Promo 2: Score Input Screen ──
 
-def generate_promo_score(output_path):
+def generate_promo_score(output_path, config=IPHONE):
     """Game screen with score drum roll input."""
-    ps = PhoneScreen()
+    ps = PhoneScreen(config)
     d = ps.draw
     s = ps._s
     pad = ps.pad
@@ -696,16 +718,16 @@ def generate_promo_score(output_path):
         ps.draw_drumroll_input(dx2, dy2, name, val, box_w=dr_w)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "スコアの記録", "直感的なUIでかんたん入力")
+    promo = create_promo_frame(phone_img, "スコアの記録", "直感的なUIでかんたん入力", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
 
 # ── Promo 3: Summary + History Screen ──
 
-def generate_promo_summary(output_path):
+def generate_promo_summary(output_path, config=IPHONE):
     """Summary cards and history table."""
-    ps = PhoneScreen()
+    ps = PhoneScreen(config)
     d = ps.draw
     s = ps._s
     pad = ps.pad
@@ -840,16 +862,16 @@ def generate_promo_summary(output_path):
             d.text((cell_cx - vtw // 2, cell_y + s(34)), pval, fill=vc, font=val_f)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "総合スコア & 履歴", "ランキングと全記録を一目で確認")
+    promo = create_promo_frame(phone_img, "総合スコア & 履歴", "ランキングと全記録を一目で確認", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
 
 # ── Promo 4: Past Games Screen ──
 
-def generate_promo_past_games(output_path):
+def generate_promo_past_games(output_path, config=IPHONE):
     """Past games list screen."""
-    ps = PhoneScreen()
+    ps = PhoneScreen(config)
     d = ps.draw
     s = ps._s
     pad = ps.pad
@@ -908,16 +930,16 @@ def generate_promo_past_games(output_path):
         gy += card_h + s(12)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "過去のゲーム一覧", "いつでも振り返り・削除が可能")
+    promo = create_promo_frame(phone_img, "過去のゲーム一覧", "いつでも振り返り・削除が可能", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
 
 # ── Promo 5: Share / Read-Only Screen ──
 
-def generate_promo_share(output_path):
+def generate_promo_share(output_path, config=IPHONE):
     """Read-only game view with share modal."""
-    ps = PhoneScreen()
+    ps = PhoneScreen(config)
     d = ps.draw
     s = ps._s
     pad = ps.pad
@@ -1053,7 +1075,7 @@ def generate_promo_share(output_path):
     draw_centered_text(d, "閉じる", code_x + btn_w // 2, btn_y + s(10), bbf, LIGHT_TEXT)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "ゲームの共有", "共有コードで友達にかんたん送信")
+    promo = create_promo_frame(phone_img, "ゲームの共有", "共有コードで友達にかんたん送信", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
@@ -1061,6 +1083,16 @@ def generate_promo_share(output_path):
 # ══════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════
+
+def generate_all_promos(output_dir, config):
+    """Generate all 5 promotional screenshots for a given device config."""
+    os.makedirs(output_dir, exist_ok=True)
+    generate_promo_setup(os.path.join(output_dir, 'promo_1_setup.png'), config)
+    generate_promo_score(os.path.join(output_dir, 'promo_2_score.png'), config)
+    generate_promo_summary(os.path.join(output_dir, 'promo_3_summary.png'), config)
+    generate_promo_past_games(os.path.join(output_dir, 'promo_4_past_games.png'), config)
+    generate_promo_share(os.path.join(output_dir, 'promo_5_share.png'), config)
+
 
 if __name__ == '__main__':
     assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
@@ -1071,11 +1103,12 @@ if __name__ == '__main__':
     generate_splash(os.path.join(assets_dir, 'splash.png'))
     generate_favicon(os.path.join(assets_dir, 'favicon.png'))
 
-    # Promotional screenshots (5 images)
-    generate_promo_setup(os.path.join(assets_dir, 'promo_1_setup.png'))
-    generate_promo_score(os.path.join(assets_dir, 'promo_2_score.png'))
-    generate_promo_summary(os.path.join(assets_dir, 'promo_3_summary.png'))
-    generate_promo_past_games(os.path.join(assets_dir, 'promo_4_past_games.png'))
-    generate_promo_share(os.path.join(assets_dir, 'promo_5_share.png'))
+    # iPhone promotional screenshots (1242x2688)
+    iphone_dir = os.path.join(assets_dir, 'iphone')
+    generate_all_promos(iphone_dir, IPHONE)
+
+    # iPad promotional screenshots (2048x2732)
+    ipad_dir = os.path.join(assets_dir, 'ipad')
+    generate_all_promos(ipad_dir, IPAD)
 
     print("\nAll assets generated successfully!")

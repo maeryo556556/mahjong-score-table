@@ -80,11 +80,11 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   ];
 
   const mockupImages = [
-    require('../assets/promo_1_setup.png'),
-    require('../assets/promo_2_score.png'),
-    require('../assets/promo_3_summary.png'),
-    require('../assets/promo_4_past_games.png'),
-    require('../assets/promo_5_share.png'),
+    require('../assets/iphone/promo_1_setup.png'),
+    require('../assets/iphone/promo_2_score.png'),
+    require('../assets/iphone/promo_3_summary.png'),
+    require('../assets/iphone/promo_4_past_games.png'),
+    require('../assets/iphone/promo_5_share.png'),
   ];
 
   const guideMockups: React.ReactNode[] = mockupImages.map((src, i) => (
