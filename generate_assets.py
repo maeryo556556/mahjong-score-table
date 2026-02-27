@@ -676,9 +676,9 @@ def generate_promo_score(output_path):
     btn_y = cy + 2 * dr_row_h + s(8)
     ps.draw_button(cx, btn_y, cw, s(42), "スコアを記録", GREEN)
 
-    # ── チップ移動 Card (showing first row of inputs) ──
+    # ── チップ移動 Card (2x2 grid, all 4 players) ──
     chip_y = card_y + card_h + s(16)
-    chip_h = s(170)
+    chip_h = s(290)
     ps.draw_card(card_x, chip_y, card_w, chip_h)
     d = ps.draw
     cy2 = chip_y + inner_pad
@@ -686,11 +686,14 @@ def generate_promo_score(output_path):
     d = ps.draw
     cy2 += s(36)
 
-    # Show first row of chip drum roll inputs (太郎, 花子)
-    chip_scores = [("太郎", 3), ("花子", -1)]
+    # Show all 4 chip drum roll inputs in 2x2 grid
+    chip_scores = [("太郎", 3), ("花子", -1), ("次郎", 2), ("美咲", -4)]
     for i, (name, val) in enumerate(chip_scores):
-        dx2 = cx + i * (dr_w + dr_gap)
-        ps.draw_drumroll_input(dx2, cy2, name, val, box_w=dr_w)
+        col = i % 2
+        row = i // 2
+        dx2 = cx + col * (dr_w + dr_gap)
+        dy2 = cy2 + row * dr_row_h
+        ps.draw_drumroll_input(dx2, dy2, name, val, box_w=dr_w)
 
     phone_img = ps.get_image()
     promo = create_promo_frame(phone_img, "スコアの記録", "直感的なUIでかんたん入力")
