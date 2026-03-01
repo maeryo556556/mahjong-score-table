@@ -259,7 +259,8 @@ export const getNextHanchan = (gameId: number) => {
 export const deleteHanchan = (gameId: number, hanchan: number) => {
   getDb().withTransactionSync(() => {
     getDb().runSync('DELETE FROM scores WHERE game_id = ? AND hanchan = ?', [gameId, hanchan]);
-    
+    getDb().runSync('DELETE FROM chips WHERE game_id = ? AND hanchan = ?', [gameId, hanchan]);
+
     // 半荘番号を採番し直す
     const scores = getDb().getAllSync<{ hanchan: number; timestamp: number }>(
       'SELECT DISTINCT hanchan, MIN(timestamp) as timestamp FROM scores WHERE game_id = ? GROUP BY hanchan ORDER BY timestamp',
@@ -422,11 +423,23 @@ export const importGameData = (shareCode: string): number => {
         });
       }
       if (data.c) {
+        // Group chips by hanchan to assign unique timestamps per group
+        // (HistoryTable groups chips by timestamp, so each hanchan needs its own)
+        const chipsByHanchan = new Map<number, Array<[number, number]>>();
         data.c.forEach(([hanchan, pIdx, chipPoint]) => {
-          getDb().runSync(
-            'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
-            [gameId, hanchan, data.p[pIdx], chipPoint, now, formattedTime]
-          );
+          if (!chipsByHanchan.has(hanchan)) chipsByHanchan.set(hanchan, []);
+          chipsByHanchan.get(hanchan)!.push([pIdx, chipPoint]);
+        });
+
+        const sortedHanchans = [...chipsByHanchan.keys()].sort((a, b) => a - b);
+        sortedHanchans.forEach((hanchan, idx) => {
+          const chipTs = now + idx + 1;
+          chipsByHanchan.get(hanchan)!.forEach(([pIdx, chipPoint]) => {
+            getDb().runSync(
+              'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
+              [gameId, hanchan, data.p[pIdx], chipPoint, chipTs, formattedTime]
+            );
+          });
         });
       }
     }
