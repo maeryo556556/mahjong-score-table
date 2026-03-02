@@ -14,9 +14,7 @@ export default function Index() {
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const handleDeepLink = useCallback((url: string) => {
-    const code = parseShareUrl(url);
-    if (!code) return;
+  const doImportFromDeepLink = useCallback((code: string) => {
     try {
       const gameId = importGameData(code);
       setCurrentGameId(gameId);
@@ -26,6 +24,30 @@ export default function Index() {
       Alert.alert('取り込みエラー', e.message || '共有リンクの読み取りに失敗しました');
     }
   }, []);
+
+  const handleDeepLink = useCallback((url: string) => {
+    const code = parseShareUrl(url);
+    if (!code) return;
+
+    // ゲーム記録中の場合は確認ダイアログを表示
+    const activeGame = getCurrentGame();
+    if (activeGame) {
+      Alert.alert(
+        '確認',
+        'ゲームが進行中です。\nゲームを中断して共有データを取り込みますか？',
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          {
+            text: '中断して取り込む',
+            onPress: () => doImportFromDeepLink(code),
+          },
+        ]
+      );
+      return;
+    }
+
+    doImportFromDeepLink(code);
+  }, [doImportFromDeepLink]);
 
   useEffect(() => {
     initDatabase();
