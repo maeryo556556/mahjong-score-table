@@ -339,9 +339,17 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     />
                   ))}
                 </View>
-                <TouchableOpacity style={[styles.recordButton, styles.scoreButton]} onPress={handleRecordScore}>
-                  <Text style={styles.recordButtonText}>スコアを記録</Text>
-                </TouchableOpacity>
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.recordButton, styles.resetButton, { flex: 1 }]}
+                    onPress={() => setScoreValues(new Array(players.length).fill(0))}
+                  >
+                    <Text style={styles.resetButtonText}>リセット</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.recordButton, styles.scoreButton, { flex: 2 }]} onPress={handleRecordScore}>
+                    <Text style={styles.recordButtonText}>スコアを記録</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* チップ移動 */}
@@ -367,12 +375,19 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     />
                   ))}
                 </View>
-                <TouchableOpacity
-                  style={[styles.recordButton, styles.chipButton]}
-                  onPress={handleRecordChip}
-                >
-                  <Text style={styles.recordButtonText}>チップを記録</Text>
-                </TouchableOpacity>
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.recordButton, styles.resetButton, { flex: 1 }]}
+                    onPress={() => setChipValues(new Array(players.length).fill(0))}
+                  >
+                    <Text style={styles.resetButtonText}>リセット</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.recordButton, styles.chipButton, { flex: 2 }]}
+                    onPress={handleRecordChip}
+                  >
+                    <Text style={styles.recordButtonText}>チップを記録</Text>
+                  </TouchableOpacity>
               </View>
             </>
           )}
@@ -559,12 +574,26 @@ const styles = StyleSheet.create({
   totalPreviewError: {
     color: '#dc3545',
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
   recordButton: {
     backgroundColor: '#2a5298',
     borderRadius: 6,
     padding: 12,
     alignItems: 'center',
-    marginTop: 12,
+  },
+  resetButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#adb5bd',
+  },
+  resetButtonText: {
+    color: '#6c757d',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   scoreButton: {
     backgroundColor: '#28a745',
