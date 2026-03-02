@@ -40,7 +40,10 @@ export default function DrumRollInput({
           </TouchableOpacity>
         </View>
         <View style={styles.display}>
-          <Text style={styles.displayText}>
+          <Text style={[
+            styles.displayText,
+            value > 0 ? styles.positive : value < 0 ? styles.negative : null,
+          ]}>
             {value > 0 ? '+' : ''}{value}
           </Text>
         </View>
@@ -109,5 +112,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1e3c72',
+  },
+  positive: {
+    color: '#28a745',
+  },
+  negative: {
+    color: '#dc3545',
   },
 });
