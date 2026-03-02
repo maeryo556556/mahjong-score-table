@@ -86,6 +86,29 @@ export const validateShareData = (data: unknown): data is ShareGameData => {
   );
 };
 
+// ディープリンク定数
+export const DEEP_LINK_SCHEME = 'mahjong-score';
+export const DEEP_LINK_HOST = 'import';
+
+// 共有コードからディープリンクURLを生成
+export const buildShareUrl = (shareCode: string): string => {
+  return `${DEEP_LINK_SCHEME}://${DEEP_LINK_HOST}?code=${shareCode}`;
+};
+
+// ディープリンクURLから共有コードを抽出（null = 該当なし）
+export const parseShareUrl = (url: string): string | null => {
+  try {
+    // mahjong-score://import?code=<base64> 形式
+    const prefix = `${DEEP_LINK_SCHEME}://${DEEP_LINK_HOST}`;
+    if (!url.startsWith(prefix)) return null;
+    const queryString = url.includes('?') ? url.split('?')[1] : '';
+    const params = new URLSearchParams(queryString);
+    return params.get('code') || null;
+  } catch {
+    return null;
+  }
+};
+
 // 日付フォーマット（YYYY/MM/DD）
 export const formatDate = (date: Date): string => {
   return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;

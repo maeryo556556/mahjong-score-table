@@ -30,6 +30,7 @@ import {
   deleteGame,
   exportGameData,
 } from '../database';
+import { buildShareUrl } from '../utils';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
 import SummaryCards from '../components/SummaryCards';
@@ -219,7 +220,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
   const handleShareGame = () => {
     try {
       const code = exportGameData(gameId);
-      setShareCode(code);
+      setShareCode(buildShareUrl(code));
       setShowShareModal(true);
     } catch {
       Alert.alert('エラー', '共有コードの生成に失敗しました');
@@ -228,13 +229,13 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
 
   const handleCopyToClipboard = async () => {
     await Clipboard.setStringAsync(shareCode);
-    Alert.alert('コピー完了', '共有コードをクリップボードにコピーしました');
+    Alert.alert('コピー完了', '共有リンクをクリップボードにコピーしました');
   };
 
   const handleShareViaOS = async () => {
     try {
       await Share.share({
-        message: shareCode,
+        message: `麻雀スコアシートモバイル\n${shareCode}`,
         title: '麻雀スコアシートモバイル - ゲーム共有',
       });
     } catch {
@@ -430,8 +431,8 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
               <View style={styles.shareModalContent}>
                 <Text style={styles.shareModalTitle}>ゲームを共有</Text>
                 <Text style={styles.shareModalDescription}>
-                  以下の共有コードを相手に送ってください。{'\n'}
-                  相手はセットアップ画面の「ゲームを取り込む」から入力できます。
+                  以下のリンクを相手に送ってください。{'\n'}
+                  リンクをタップするとアプリが開いて自動で取り込めます。
                 </Text>
                 <View style={styles.shareCodeContainer}>
                   <TextInput
