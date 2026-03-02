@@ -199,7 +199,7 @@ describe('buildShareUrl / parseShareUrl', () => {
   it('共有コードからURL生成→パースのラウンドトリップ', () => {
     const code = encodeShareCode(JSON.stringify({ v: 2, pc: 4, d: '2025/01/15', p: ['A', 'B', 'C', 'D'], s: [] }));
     const url = buildShareUrl(code);
-    expect(url).toBe(`mahjong-score://import?code=${code}`);
+    expect(url).toBe(`mahjong-score://import?code=${encodeURIComponent(code)}`);
     expect(parseShareUrl(url)).toBe(code);
   });
 

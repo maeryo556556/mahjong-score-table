@@ -92,7 +92,7 @@ export const DEEP_LINK_HOST = 'import';
 
 // 共有コードからディープリンクURLを生成
 export const buildShareUrl = (shareCode: string): string => {
-  return `${DEEP_LINK_SCHEME}://${DEEP_LINK_HOST}?code=${shareCode}`;
+  return `${DEEP_LINK_SCHEME}://${DEEP_LINK_HOST}?code=${encodeURIComponent(shareCode)}`;
 };
 
 // ディープリンクURLから共有コードを抽出（null = 該当なし）

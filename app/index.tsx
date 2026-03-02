@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import * as Linking from 'expo-linking';
-import { initDatabase, getCurrentGame, importGameData } from '../database';
+import { initDatabase, getCurrentGame, finishGame, importGameData } from '../database';
 import { parseShareUrl } from '../utils';
 import SetupScreen from '../screens/SetupScreen';
 import GameScreen from '../screens/GameScreen';
@@ -39,7 +39,10 @@ export default function Index() {
           { text: 'キャンセル', style: 'cancel' },
           {
             text: '中断して取り込む',
-            onPress: () => doImportFromDeepLink(code),
+            onPress: () => {
+              finishGame(activeGame.id);
+              doImportFromDeepLink(code);
+            },
           },
         ]
       );
