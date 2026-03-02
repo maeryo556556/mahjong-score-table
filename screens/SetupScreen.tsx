@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, importGameData } from '../database';
+import { parseShareUrl } from '../utils';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
@@ -157,11 +158,13 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   };
 
   const handleImport = () => {
-    const code = importCode.trim();
-    if (!code) {
-      Alert.alert('入力エラー', '共有コードを入力してください');
+    const rawInput = importCode.trim();
+    if (!rawInput) {
+      Alert.alert('入力エラー', '共有リンクまたはコードを入力してください');
       return;
     }
+    // URLからコード部分を抽出、URLでなければそのまま使用
+    const code = parseShareUrl(rawInput) || rawInput;
     try {
       const gameId = importGameData(code);
       setShowImportModal(false);
@@ -329,13 +332,13 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
               <Text style={styles.importModalDescription}>
-                共有されたコードを貼り付けてください
+                共有されたリンクまたはコードを貼り付けてください
               </Text>
               <TextInput
                 style={styles.importCodeInput}
                 value={importCode}
                 onChangeText={setImportCode}
-                placeholder="共有コードを貼り付け"
+                placeholder="共有リンクまたはコードを貼り付け"
                 multiline
                 autoFocus
               />
