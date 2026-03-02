@@ -3,8 +3,8 @@
 
 Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
-  - iphone/promo_1_setup.png ... promo_5_share.png (5 iPhone promotional screenshots)
-  - ipad/promo_1_setup.png ... promo_5_share.png (5 iPad promotional screenshots)
+  - iphone/promo_1_setup.png ... promo_6_share.png (6 iPhone promotional screenshots)
+  - ipad/promo_1_setup.png ... promo_6_share.png (6 iPad promotional screenshots)
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -461,23 +461,23 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IP
     draw_gradient_bg(img, (15, 30, 80), (25, 55, 120))
     draw = ImageDraw.Draw(img)
 
-    top_y = int(promo_h * 0.02)
+    top_y = int(promo_h * 0.03)
 
-    # Title text
+    # Title text (large enough to be visible on App Store listing)
     if title_text:
-        title_font_size = int(promo_w * 0.058)
+        title_font_size = int(promo_w * 0.09)
         tf = font(title_font_size, jp=True)
         draw_centered_text(draw, title_text, promo_w // 2, top_y, tf, WHITE)
-        top_y += int(title_font_size * 1.4)
+        top_y += int(title_font_size * 1.5)
 
     if subtitle_text:
-        sub_font_size = int(promo_w * 0.032)
+        sub_font_size = int(promo_w * 0.048)
         sf = font(sub_font_size, jp=True)
         draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (160, 200, 255))
-        top_y += int(sub_font_size * 1.4)
+        top_y += int(sub_font_size * 1.5)
 
-    # Device frame
-    phone_w = int(promo_w * 0.82)
+    # Device frame (smaller to give more space to text)
+    phone_w = int(promo_w * 0.62)
     phone_h = int(phone_w * screen_h / screen_w)
     phone_scaled = phone_img.resize((phone_w, phone_h), Image.LANCZOS)
 
@@ -490,7 +490,7 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IP
         corner_r = int(phone_w * 0.055)
 
     px = (promo_w - phone_w) // 2 - bezel
-    py = top_y + int(promo_h * 0.01)
+    py = top_y + int(promo_h * 0.02)
 
     # Shadow
     shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
@@ -643,19 +643,14 @@ def generate_promo_setup(output_path, config=IPHONE):
 
 # ── Promo 2: Score Input Screen ──
 
-def generate_promo_score(output_path, config=IPHONE):
-    """Game screen with score drum roll input."""
-    ps = PhoneScreen(config)
+def _draw_game_header(ps, hanchan_label="第1半荘"):
+    """Draw the common game screen header with suspend/finish buttons."""
     d = ps.draw
     s = ps._s
     pad = ps.pad
-
-    ps.draw_status_bar()
-
-    # Header: 第1半荘 | [中断] [ゲーム終了]
     hy = ps.y + s(4)
     hf = font(s(24), jp=True)
-    d.text((pad, hy), "第1半荘", fill=WHITE, font=hf)
+    d.text((pad, hy), hanchan_label, fill=WHITE, font=hf)
 
     # Suspend button
     bx = ps.w - pad - s(86) - s(8) - s(50)
@@ -668,6 +663,19 @@ def generate_promo_score(output_path, config=IPHONE):
     fx = ps.w - pad - s(86)
     rrect(d, (fx, hy, fx + s(86), hy + s(32)), s(6), fill=RED)
     draw_centered_text(d, "ゲーム終了", fx + s(43), hy + s(6), bf, WHITE)
+
+    return hy
+
+
+def generate_promo_score(output_path, config=IPHONE):
+    """Game screen with score drum roll input (score only, no chip)."""
+    ps = PhoneScreen(config)
+    d = ps.draw
+    s = ps._s
+    pad = ps.pad
+
+    ps.draw_status_bar()
+    hy = _draw_game_header(ps)
 
     card_y = hy + s(48)
     card_x = pad
@@ -700,27 +708,57 @@ def generate_promo_score(output_path, config=IPHONE):
     btn_y = cy + 2 * dr_row_h + s(8)
     ps.draw_button(cx, btn_y, cw, s(42), "スコアを記録", GREEN)
 
-    # ── チップ移動 Card (2x2 grid, all 4 players) ──
-    chip_y = card_y + card_h + s(16)
-    chip_h = s(290)
-    ps.draw_card(card_x, chip_y, card_w, chip_h)
-    d = ps.draw
-    cy2 = chip_y + inner_pad
-    ps.draw_section_title(cx, cy2, cw, "チップ移動", "合計: 0")
-    d = ps.draw
-    cy2 += s(36)
+    phone_img = ps.get_image()
+    promo = create_promo_frame(phone_img, "ポイント入力", "直感的なUIでかんたん入力", config)
+    promo.save(output_path, 'PNG')
+    print(f"Generated: {output_path}")
 
-    # Show all 4 chip drum roll inputs in 2x2 grid
+
+# ── Promo 3: Chip Input Screen ──
+
+def generate_promo_chip(output_path, config=IPHONE):
+    """Game screen with chip drum roll input (chip only)."""
+    ps = PhoneScreen(config)
+    d = ps.draw
+    s = ps._s
+    pad = ps.pad
+
+    ps.draw_status_bar()
+    hy = _draw_game_header(ps)
+
+    card_y = hy + s(48)
+    card_x = pad
+    card_w = ps.w - 2 * pad
+    inner_pad = s(16)
+    cx = card_x + inner_pad
+    cw = card_w - 2 * inner_pad
+
+    # ── チップ移動 Card (2x2 grid, all 4 players) ──
+    chip_h = s(390)
+    ps.draw_card(card_x, card_y, card_w, chip_h)
+    d = ps.draw
+    cy = card_y + inner_pad
+    cy = ps.draw_section_title(cx, cy, cw, "チップ移動", "合計: 0")
+    d = ps.draw
+
+    # DrumRoll inputs (2x2 grid)
+    dr_gap = s(8)
+    dr_w = (cw - dr_gap) // 2
+    dr_row_h = s(120)
     chip_scores = [("太郎", 3), ("花子", -1), ("次郎", 2), ("美咲", -4)]
     for i, (name, val) in enumerate(chip_scores):
         col = i % 2
         row = i // 2
-        dx2 = cx + col * (dr_w + dr_gap)
-        dy2 = cy2 + row * dr_row_h
-        ps.draw_drumroll_input(dx2, dy2, name, val, box_w=dr_w)
+        dx = cx + col * (dr_w + dr_gap)
+        dy = cy + row * dr_row_h
+        ps.draw_drumroll_input(dx, dy, name, val, box_w=dr_w)
+
+    # チップを記録 button
+    btn_y = cy + 2 * dr_row_h + s(8)
+    ps.draw_button(cx, btn_y, cw, s(42), "チップを記録", GREEN)
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "スコアの記録", "直感的なUIでかんたん入力", config)
+    promo = create_promo_frame(phone_img, "チップ移動", "チップ枚数もまとめて管理", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
@@ -735,21 +773,7 @@ def generate_promo_summary(output_path, config=IPHONE):
     pad = ps.pad
 
     ps.draw_status_bar()
-
-    # Header
-    hy = ps.y + s(4)
-    hf = font(s(24), jp=True)
-    d.text((pad, hy), "第3半荘", fill=WHITE, font=hf)
-
-    # Buttons
-    bx = ps.w - pad - s(86) - s(8) - s(50)
-    bf = font(s(13), jp=True)
-    rrect(d, (bx, hy, bx + s(50), hy + s(32)), s(6),
-           fill=(255, 255, 255, 50), outline=(255, 255, 255, 100), width=1)
-    draw_centered_text(d, "中断", bx + s(25), hy + s(6), bf, WHITE)
-    fx = ps.w - pad - s(86)
-    rrect(d, (fx, hy, fx + s(86), hy + s(32)), s(6), fill=RED)
-    draw_centered_text(d, "ゲーム終了", fx + s(43), hy + s(6), bf, WHITE)
+    hy = _draw_game_header(ps, "第3半荘")
 
     card_y = hy + s(48)
     card_x = pad
@@ -1087,13 +1111,14 @@ def generate_promo_share(output_path, config=IPHONE):
 # ══════════════════════════════════════════════
 
 def generate_all_promos(output_dir, config):
-    """Generate all 5 promotional screenshots for a given device config."""
+    """Generate all 6 promotional screenshots for a given device config."""
     os.makedirs(output_dir, exist_ok=True)
     generate_promo_setup(os.path.join(output_dir, 'promo_1_setup.png'), config)
     generate_promo_score(os.path.join(output_dir, 'promo_2_score.png'), config)
-    generate_promo_summary(os.path.join(output_dir, 'promo_3_summary.png'), config)
-    generate_promo_past_games(os.path.join(output_dir, 'promo_4_past_games.png'), config)
-    generate_promo_share(os.path.join(output_dir, 'promo_5_share.png'), config)
+    generate_promo_chip(os.path.join(output_dir, 'promo_3_chip.png'), config)
+    generate_promo_summary(os.path.join(output_dir, 'promo_4_summary.png'), config)
+    generate_promo_past_games(os.path.join(output_dir, 'promo_5_past_games.png'), config)
+    generate_promo_share(os.path.join(output_dir, 'promo_6_share.png'), config)
 
 
 if __name__ == '__main__':
