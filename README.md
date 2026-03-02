@@ -88,9 +88,9 @@ mahjong-score-table/
 ├── assets/
 │   ├── icon.png / splash.png / favicon.png  # アプリアセット
 │   ├── iphone/                 # iPhone用プロモーション画像（1242×2688）
-│   │   └── promo_1〜5_*.png
+│   │   └── promo_1〜6_*.png
 │   └── ipad/                   # iPad用プロモーション画像（2048×2732）
-│       └── promo_1〜5_*.png
+│       └── promo_1〜6_*.png
 ├── package.json
 ├── app.json
 └── tsconfig.json
