@@ -458,7 +458,8 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IP
     screen_w, screen_h = config.screen_w, config.screen_h
 
     img = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 0))
-    draw_gradient_bg(img, (15, 30, 80), (25, 55, 120))
+    # Dark top for text contrast → lighter bottom so device frame stands out
+    draw_gradient_bg(img, (10, 20, 55), (50, 95, 165))
     draw = ImageDraw.Draw(img)
 
     top_y = int(promo_h * 0.03)
@@ -471,9 +472,9 @@ def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IP
         top_y += int(title_font_size * 1.5)
 
     if subtitle_text:
-        sub_font_size = int(promo_w * 0.048)
+        sub_font_size = int(promo_w * 0.065)
         sf = font(sub_font_size, jp=True)
-        draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (160, 200, 255))
+        draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (255, 225, 130))
         top_y += int(sub_font_size * 1.5)
 
     # Device frame (smaller to give more space to text)
