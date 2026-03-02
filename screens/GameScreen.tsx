@@ -390,6 +390,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
                     <Text style={styles.recordButtonText}>チップを記録</Text>
                   </TouchableOpacity>
               </View>
+              </View>
             </>
           )}
 
