@@ -1,4 +1,13 @@
 import * as SQLite from 'expo-sqlite';
+import {
+  calcRanks,
+  encodeShareCode,
+  decodeShareCode,
+  validateShareData,
+  formatDate,
+  formatTime,
+} from './utils';
+import type { ShareGameData, ShareGameDataV1, ShareGameDataV2 } from './utils';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -68,7 +77,7 @@ export const initDatabase = () => {
 // ゲーム作成
 export const createGame = (playerCount: number, playerNames: string[]) => {
   const now = new Date();
-  const startDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+  const startDate = formatDate(now);
 
   let gameId: number = 0;
   getDb().withTransactionSync(() => {
@@ -97,7 +106,7 @@ export const recordScore = (
 ) => {
   const now = new Date();
   const timestamp = now.getTime();
-  const formattedTime = `${now.getMonth() + 1}月${now.getDate()}日${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const formattedTime = formatTime(now);
 
   getDb().withTransactionSync(() => {
     scores.forEach(score => {
@@ -117,7 +126,7 @@ export const recordChip = (
 ) => {
   const now = new Date();
   const timestamp = now.getTime();
-  const formattedTime = `${now.getMonth() + 1}月${now.getDate()}日${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const formattedTime = formatTime(now);
 
   getDb().withTransactionSync(() => {
     chips.forEach(chip => {
@@ -282,28 +291,8 @@ export const deleteChip = (chipId: number) => {
   getDb().runSync('DELETE FROM chips WHERE id = ?', [chipId]);
 };
 
-// ゲームデータをエクスポート用に取得
-// v1: 旧フォーマット（後方互換用）
-export interface ShareGameDataV1 {
-  v: 1;
-  pc: number;
-  d: string;
-  p: string[];
-  s: Array<[number, string, number, number, number, string]>;
-  c: Array<[number, string, number, number, string]>;
-}
-
-// v2: コンパクトフォーマット（プレイヤーインデックス、冗長データ削除）
-export interface ShareGameDataV2 {
-  v: 2;
-  pc: number;
-  d: string;
-  p: string[];
-  s: Array<[number, number, number]>; // [hanchan, playerIndex, point]
-  c?: Array<[number, number, number]>; // [hanchan, playerIndex, chipPoint]
-}
-
-type ShareGameData = ShareGameDataV1 | ShareGameDataV2;
+// 型定義は utils.ts から re-export
+export type { ShareGameDataV1, ShareGameDataV2, ShareGameData } from './utils';
 
 export const exportGameData = (gameId: number): string => {
   const game = getGameById(gameId);
@@ -330,37 +319,20 @@ export const exportGameData = (gameId: number): string => {
   };
 
   const json = JSON.stringify(data);
-  return btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
-};
-
-// 順位を計算するヘルパー
-const calcRanks = (players: string[], scoresInHanchan: Map<string, number>): Map<string, number> => {
-  const sorted = players
-    .map(p => ({ player: p, point: scoresInHanchan.get(p) ?? 0 }))
-    .sort((a, b) => b.point - a.point);
-  const ranks = new Map<string, number>();
-  let currentRank = 1;
-  for (let i = 0; i < sorted.length; i++) {
-    if (i > 0 && sorted[i].point < sorted[i - 1].point) {
-      currentRank = i + 1;
-    }
-    ranks.set(sorted[i].player, currentRank);
-  }
-  return ranks;
+  return encodeShareCode(json);
 };
 
 // 共有コードからゲームデータをインポート
 export const importGameData = (shareCode: string): number => {
   let data: ShareGameData;
   try {
-    const binary = atob(shareCode);
-    const json = decodeURIComponent(binary.split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    const json = decodeShareCode(shareCode);
     data = JSON.parse(json);
   } catch {
     throw new Error('共有コードが正しくありません');
   }
 
-  if ((data.v !== 1 && data.v !== 2) || !data.pc || !data.d || !data.p || !Array.isArray(data.p)) {
+  if (!validateShareData(data)) {
     throw new Error('共有コードの形式が正しくありません');
   }
 
