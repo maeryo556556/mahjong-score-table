@@ -68,8 +68,8 @@ export interface ShareGameDataV2 {
   pc: number;
   d: string;
   p: string[];
-  s: Array<[number, number, number]>;
-  c?: Array<[number, number, number]>;
+  s: Array<[number, number, number] | [number, number, number, number, string]>;
+  c?: Array<[number, number, number] | [number, number, number, number, string]>;
 }
 
 export type ShareGameData = ShareGameDataV1 | ShareGameDataV2;

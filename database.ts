@@ -72,6 +72,13 @@ export const initDatabase = () => {
   } catch {
     // カラムが既に存在する場合は無視
   }
+
+  // 既存DBにimportedカラムがない場合のマイグレーション
+  try {
+    getDb().runSync('ALTER TABLE games ADD COLUMN imported INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
 };
 
 // ゲーム作成
@@ -162,8 +169,8 @@ export const getGameById = (gameId: number) => {
 
 // 終了済みゲーム一覧取得
 export const getFinishedGames = () => {
-  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
-    'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
+  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number; imported: number }>(
+    'SELECT id, player_count, start_date, created_at, imported FROM games WHERE finished = 1 ORDER BY created_at DESC'
   );
   return games.map(game => {
     const players = getDb().getAllSync<{ player_name: string }>(
@@ -302,20 +309,20 @@ export const exportGameData = (gameId: number): string => {
   const playerIndex = new Map(players.map((name, i) => [name, i]));
 
   const scores = getDb().getAllSync<{
-    hanchan: number; player_name: string; point: number;
-  }>('SELECT hanchan, player_name, point FROM scores WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
+    hanchan: number; player_name: string; point: number; timestamp: number; formatted_time: string;
+  }>('SELECT hanchan, player_name, point, timestamp, formatted_time FROM scores WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
 
   const chips = getDb().getAllSync<{
-    hanchan: number; player_name: string; chip_point: number;
-  }>('SELECT hanchan, player_name, chip_point FROM chips WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
+    hanchan: number; player_name: string; chip_point: number; timestamp: number; formatted_time: string;
+  }>('SELECT hanchan, player_name, chip_point, timestamp, formatted_time FROM chips WHERE game_id = ? ORDER BY hanchan, player_name', [gameId]);
 
   const data: ShareGameDataV2 = {
     v: 2,
     pc: game.player_count,
     d: game.start_date,
     p: players,
-    s: scores.map(s => [s.hanchan, playerIndex.get(s.player_name)!, s.point]),
-    ...(chips.length > 0 ? { c: chips.map(c => [c.hanchan, playerIndex.get(c.player_name)!, c.chip_point]) } : {}),
+    s: scores.map(s => [s.hanchan, playerIndex.get(s.player_name)!, s.point, s.timestamp, s.formatted_time]),
+    ...(chips.length > 0 ? { c: chips.map(c => [c.hanchan, playerIndex.get(c.player_name)!, c.chip_point, c.timestamp, c.formatted_time]) } : {}),
   };
 
   const json = JSON.stringify(data);
@@ -343,7 +350,7 @@ export const importGameData = (shareCode: string): number => {
 
   getDb().withTransactionSync(() => {
     const result = getDb().runSync(
-      'INSERT INTO games (player_count, start_date, created_at, finished) VALUES (?, ?, ?, 1)',
+      'INSERT INTO games (player_count, start_date, created_at, finished, imported) VALUES (?, ?, ?, 1, 1)',
       [data.pc, data.d, now]
     );
     gameId = result.lastInsertRowId;
@@ -377,39 +384,52 @@ export const importGameData = (shareCode: string): number => {
       // v2: プレイヤーインデックスから名前復元、順位再計算
       if (data.s) {
         // 半荘ごとにグループ化して順位を計算
-        const byHanchan = new Map<number, Array<{ playerName: string; point: number }>>();
-        data.s.forEach(([hanchan, pIdx, point]) => {
+        const byHanchan = new Map<number, Array<{ playerName: string; point: number; ts: number; ft: string }>>();
+        data.s.forEach((entry) => {
+          const hanchan = entry[0];
+          const playerName = data.p[entry[1]];
+          const point = entry[2];
+          // タイムスタンプが含まれていればそれを使用、なければ fallback
+          const ts = entry.length >= 5 ? (entry as [number, number, number, number, string])[3] : now;
+          const ft = entry.length >= 5 ? (entry as [number, number, number, number, string])[4] : formattedTime;
           if (!byHanchan.has(hanchan)) byHanchan.set(hanchan, []);
-          byHanchan.get(hanchan)!.push({ playerName: data.p[pIdx], point });
+          byHanchan.get(hanchan)!.push({ playerName, point, ts, ft });
         });
 
         byHanchan.forEach((entries, hanchan) => {
           const scoresMap = new Map(entries.map(e => [e.playerName, e.point]));
           const ranks = calcRanks(data.p, scoresMap);
-          entries.forEach(({ playerName, point }) => {
+          entries.forEach(({ playerName, point, ts, ft }) => {
             getDb().runSync(
               'INSERT INTO scores (game_id, hanchan, player_name, point, rank, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [gameId, hanchan, playerName, point, ranks.get(playerName)!, now, formattedTime]
+              [gameId, hanchan, playerName, point, ranks.get(playerName)!, ts, ft]
             );
           });
         });
       }
       if (data.c) {
-        // Group chips by hanchan to assign unique timestamps per group
-        // (HistoryTable groups chips by timestamp, so each hanchan needs its own)
-        const chipsByHanchan = new Map<number, Array<[number, number]>>();
-        data.c.forEach(([hanchan, pIdx, chipPoint]) => {
+        // 半荘ごとにグループ化（HistoryTable がタイムスタンプでグループ化するため）
+        const chipsByHanchan = new Map<number, Array<{ pIdx: number; chipPoint: number; ts: number; ft: string }>>();
+        data.c.forEach((entry) => {
+          const hanchan = entry[0];
+          const pIdx = entry[1];
+          const chipPoint = entry[2];
+          const hasTs = entry.length >= 5;
+          const ts = hasTs ? (entry as [number, number, number, number, string])[3] : 0;
+          const ft = hasTs ? (entry as [number, number, number, number, string])[4] : formattedTime;
           if (!chipsByHanchan.has(hanchan)) chipsByHanchan.set(hanchan, []);
-          chipsByHanchan.get(hanchan)!.push([pIdx, chipPoint]);
+          chipsByHanchan.get(hanchan)!.push({ pIdx, chipPoint, ts, ft });
         });
 
         const sortedHanchans = [...chipsByHanchan.keys()].sort((a, b) => a - b);
         sortedHanchans.forEach((hanchan, idx) => {
-          const chipTs = now + idx + 1;
-          chipsByHanchan.get(hanchan)!.forEach(([pIdx, chipPoint]) => {
+          const entries = chipsByHanchan.get(hanchan)!;
+          // タイムスタンプがない旧データの場合、半荘ごとに異なるタイムスタンプを割り当て
+          const fallbackTs = now + idx + 1;
+          entries.forEach(({ pIdx, chipPoint, ts, ft }) => {
             getDb().runSync(
               'INSERT INTO chips (game_id, hanchan, player_name, chip_point, timestamp, formatted_time) VALUES (?, ?, ?, ?, ?, ?)',
-              [gameId, hanchan, data.p[pIdx], chipPoint, chipTs, formattedTime]
+              [gameId, hanchan, data.p[pIdx], chipPoint, ts || fallbackTs, ft]
             );
           });
         });
