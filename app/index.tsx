@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { getCurrentGame, finishGame, importGameData } from '../database';
+import { getCurrentGame } from '../database';
 import SetupScreen from '../screens/SetupScreen';
 import GameScreen from '../screens/GameScreen';
 import PastGamesScreen from '../screens/PastGamesScreen';
