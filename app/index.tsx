@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { getCurrentGame } from '../database';
 import SetupScreen from '../screens/SetupScreen';
 import GameScreen from '../screens/GameScreen';
@@ -9,7 +9,7 @@ import PastGamesScreen from '../screens/PastGamesScreen';
 type Screen = 'setup' | 'game' | 'pastGames' | 'viewPastGame';
 
 export default function Index() {
-  const { viewGameId, code } = useLocalSearchParams<{ viewGameId?: string; code?: string }>();
+  const { viewGameId } = useLocalSearchParams<{ viewGameId?: string }>();
   const [screen, setScreen] = useState<Screen>('setup');
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,21 +23,13 @@ export default function Index() {
     setIsLoading(false);
   }, []);
 
-  // ディープリンク経由の取り込み後: app/import.tsx から viewGameId 付きでリダイレクトされる
+  // ディープリンク経由の取り込み後: _layout.tsx から viewGameId 付きでリダイレクトされる
   useEffect(() => {
     if (viewGameId) {
       setCurrentGameId(Number(viewGameId));
       setScreen('viewPastGame');
     }
   }, [viewGameId]);
-
-  // expo-router が mahjong-score://import?code=... を / にルーティングした場合の処理
-  // （import がホスト名として解釈され、パスが / になるケース）
-  useEffect(() => {
-    if (!code) return;
-    // app/import.tsx に委譲
-    router.replace({ pathname: '/import', params: { code } });
-  }, [code]);
 
   const handleStartGame = (gameId: number) => {
     setCurrentGameId(gameId);

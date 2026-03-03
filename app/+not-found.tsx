@@ -1,13 +1,7 @@
-import { useLocalSearchParams, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 
 export default function NotFound() {
-  const { code } = useLocalSearchParams<{ code?: string }>();
-
-  // ディープリンク mahjong-score://import?code=... が unmatched route になった場合、
-  // code パラメータがあれば /import ルートにリダイレクトして取り込み処理を行う
-  if (code) {
-    return <Redirect href={`/import?code=${encodeURIComponent(code)}`} />;
-  }
-
+  // ディープリンク等で unmatched route になった場合、ホーム画面にリダイレクト
+  // （ディープリンクの取り込み処理は _layout.tsx の Linking ハンドラで行う）
   return <Redirect href="/" />;
 }
