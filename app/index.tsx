@@ -23,7 +23,7 @@ export default function Index() {
     setIsLoading(false);
   }, []);
 
-  // ディープリンク経由の取り込み後: app/import.tsx から viewGameId 付きでリダイレクトされる
+  // ディープリンク経由の取り込み後: _layout.tsx から viewGameId 付きでリダイレクトされる
   useEffect(() => {
     if (viewGameId) {
       setCurrentGameId(Number(viewGameId));
