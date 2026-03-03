@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { getCurrentGame } from '../database';
+import { View, StyleSheet, Alert } from 'react-native';
+import { useLocalSearchParams, router } from 'expo-router';
+import { getCurrentGame, finishGame, importGameData } from '../database';
 import SetupScreen from '../screens/SetupScreen';
 import GameScreen from '../screens/GameScreen';
 import PastGamesScreen from '../screens/PastGamesScreen';
@@ -9,7 +9,7 @@ import PastGamesScreen from '../screens/PastGamesScreen';
 type Screen = 'setup' | 'game' | 'pastGames' | 'viewPastGame';
 
 export default function Index() {
-  const { viewGameId } = useLocalSearchParams<{ viewGameId?: string }>();
+  const { viewGameId, code } = useLocalSearchParams<{ viewGameId?: string; code?: string }>();
   const [screen, setScreen] = useState<Screen>('setup');
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,6 +30,14 @@ export default function Index() {
       setScreen('viewPastGame');
     }
   }, [viewGameId]);
+
+  // expo-router が mahjong-score://import?code=... を / にルーティングした場合の処理
+  // （import がホスト名として解釈され、パスが / になるケース）
+  useEffect(() => {
+    if (!code) return;
+    // app/import.tsx に委譲
+    router.replace({ pathname: '/import', params: { code } });
+  }, [code]);
 
   const handleStartGame = (gameId: number) => {
     setCurrentGameId(gameId);
