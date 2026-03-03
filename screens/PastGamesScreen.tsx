@@ -67,7 +67,14 @@ export default function PastGamesScreen({ onSelectGame, onBack }: PastGamesScree
                 delayLongPress={800}
               >
                 <View style={styles.gameCardHeader}>
-                  <Text style={styles.gameDate}>{game.start_date}</Text>
+                  <View style={styles.gameDateRow}>
+                    <Text style={styles.gameDate}>{game.start_date}</Text>
+                    {game.imported === 1 && (
+                      <View style={styles.importedBadge}>
+                        <Text style={styles.importedBadgeText}>共有</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.gameType}>
                     {game.player_count === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
                   </Text>
@@ -156,10 +163,28 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
     paddingBottom: 8,
   },
+  gameDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   gameDate: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1e3c72',
+  },
+  importedBadge: {
+    backgroundColor: '#e8f4fd',
+    borderWidth: 1,
+    borderColor: '#90caf9',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  importedBadgeText: {
+    fontSize: 11,
+    color: '#1565c0',
+    fontWeight: 'bold',
   },
   gameType: {
     fontSize: 13,
