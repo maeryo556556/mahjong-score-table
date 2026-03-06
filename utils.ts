@@ -1,3 +1,5 @@
+import { deflate, inflate } from 'pako';
+
 // 順位を計算する
 export const calcRanks = (
   players: string[],
@@ -32,25 +34,39 @@ export const clampValue = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
 
-// 共有コードエンコード（JSON → Base64）
+// 共有コードエンコード（JSON → deflate圧縮 → Base64）
 export const encodeShareCode = (json: string): string => {
-  return btoa(
-    encodeURIComponent(json).replace(
-      /%([0-9A-F]{2})/g,
-      (_, p1) => String.fromCharCode(parseInt(p1, 16))
-    )
-  );
+  const utf8Bytes = new TextEncoder().encode(json);
+  const compressed = deflate(utf8Bytes);
+  // Uint8Array → binary string → base64
+  let binary = '';
+  for (let i = 0; i < compressed.length; i++) {
+    binary += String.fromCharCode(compressed[i]);
+  }
+  return btoa(binary);
 };
 
-// 共有コードデコード（Base64 → JSON）
+// 共有コードデコード（Base64 → inflate解凍 → JSON）
+// 旧形式（非圧縮）にも後方互換
 export const decodeShareCode = (code: string): string => {
   const binary = atob(code);
-  return decodeURIComponent(
-    binary
-      .split('')
-      .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-      .join('')
-  );
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  // 圧縮データの場合は inflate、旧形式なら従来のデコード
+  try {
+    const decompressed = inflate(bytes);
+    return new TextDecoder().decode(decompressed);
+  } catch {
+    // 旧形式（非圧縮 base64）のフォールバック
+    return decodeURIComponent(
+      binary
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+  }
 };
 
 // 共有データバリデーション
