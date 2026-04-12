@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   label: {
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 6,
