@@ -134,3 +134,102 @@ export const formatDate = (date: Date): string => {
 export const formatTime = (date: Date): string => {
   return `${date.getMonth() + 1}月${date.getDate()}日${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
+
+// 共有データから復元した記録行（SQLite の scores / chips 行と同じ形）
+export interface ScoreRow {
+  hanchan: number;
+  player_name: string;
+  point: number;
+  rank: number;
+  timestamp: number;
+  formatted_time: string;
+}
+
+export interface ChipRow {
+  id: number;
+  hanchan: number;
+  player_name: string;
+  chip_point: number;
+  timestamp: number;
+  formatted_time: string;
+}
+
+export interface GameRecords {
+  playerCount: number;
+  startDate: string;
+  players: string[];
+  scores: ScoreRow[];
+  chips: ChipRow[];
+}
+
+/**
+ * 共有データ（v1/v2）を記録行に展開する。
+ * 取り込み（importGameData）とライブ閲覧の両方で使う。
+ * スコア・チップは記録日時の新しい順に並べる。
+ * @param now タイムスタンプを持たない旧データのフォールバック時刻
+ */
+export const shareDataToRecords = (data: ShareGameData, now: number = Date.now()): GameRecords => {
+  const scores: ScoreRow[] = [];
+  const chips: ChipRow[] = [];
+  const dateParts = data.d.split('/');
+  const fallbackFormattedTime = `${parseInt(dateParts[1])}月${parseInt(dateParts[2])}日`;
+
+  if (data.v === 1) {
+    (data.s || []).forEach(([hanchan, playerName, point, rank, timestamp, ft]) => {
+      scores.push({ hanchan, player_name: playerName, point, rank, timestamp, formatted_time: ft });
+    });
+    (data.c || []).forEach(([hanchan, playerName, chipPoint, timestamp, ft], i) => {
+      chips.push({ id: i + 1, hanchan, player_name: playerName, chip_point: chipPoint, timestamp, formatted_time: ft });
+    });
+  } else {
+    // v2: プレイヤーインデックスから名前復元、半荘ごとに順位再計算
+    const byHanchan = new Map<number, Array<{ playerName: string; point: number; ts: number; ft: string }>>();
+    (data.s || []).forEach((entry) => {
+      const hanchan = entry[0];
+      const playerName = data.p[entry[1]];
+      const point = entry[2];
+      const hasTs = entry.length >= 5;
+      const ts = hasTs ? (entry as [number, number, number, number, string])[3] : now;
+      const ft = hasTs ? (entry as [number, number, number, number, string])[4] : fallbackFormattedTime;
+      if (!byHanchan.has(hanchan)) byHanchan.set(hanchan, []);
+      byHanchan.get(hanchan)!.push({ playerName, point, ts, ft });
+    });
+    byHanchan.forEach((entries, hanchan) => {
+      const ranks = calcRanks(data.p, new Map(entries.map(e => [e.playerName, e.point])));
+      entries.forEach(({ playerName, point, ts, ft }) => {
+        scores.push({ hanchan, player_name: playerName, point, rank: ranks.get(playerName)!, timestamp: ts, formatted_time: ft });
+      });
+    });
+
+    // チップは半荘ごとにグループ化（HistoryTable がタイムスタンプでグループ化するため）
+    const chipsByHanchan = new Map<number, Array<{ pIdx: number; chipPoint: number; ts: number; ft: string }>>();
+    (data.c || []).forEach((entry) => {
+      const hanchan = entry[0];
+      const hasTs = entry.length >= 5;
+      const ts = hasTs ? (entry as [number, number, number, number, string])[3] : 0;
+      const ft = hasTs ? (entry as [number, number, number, number, string])[4] : fallbackFormattedTime;
+      if (!chipsByHanchan.has(hanchan)) chipsByHanchan.set(hanchan, []);
+      chipsByHanchan.get(hanchan)!.push({ pIdx: entry[1], chipPoint: entry[2], ts, ft });
+    });
+    let chipId = 1;
+    [...chipsByHanchan.keys()].sort((a, b) => a - b).forEach((hanchan, idx) => {
+      // タイムスタンプがない旧データの場合、半荘ごとに異なるタイムスタンプを割り当て
+      const fallbackTs = now + idx + 1;
+      chipsByHanchan.get(hanchan)!.forEach(({ pIdx, chipPoint, ts, ft }) => {
+        chips.push({
+          id: chipId++,
+          hanchan,
+          player_name: data.p[pIdx],
+          chip_point: chipPoint,
+          timestamp: ts || fallbackTs,
+          formatted_time: ft,
+        });
+      });
+    });
+  }
+
+  scores.sort((a, b) => b.timestamp - a.timestamp);
+  chips.sort((a, b) => b.timestamp - a.timestamp);
+
+  return { playerCount: data.pc, startDate: data.d, players: data.p, scores, chips };
+};

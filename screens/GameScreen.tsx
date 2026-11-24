@@ -29,21 +29,46 @@ import {
   finishGame,
   deleteGame,
   exportGameData,
+  buildShareData,
+  importShareData,
+  getLiveSession,
+  setLiveSession,
 } from '../database';
-import { buildShareUrl } from '../utils';
+import { buildShareUrl, shareDataToRecords } from '../utils';
+import type { ShareGameData } from '../utils';
+import { buildSessionUrl } from '../liveSession';
+import type { LiveSessionStatus } from '../liveSession';
+import { getLiveSessionService } from '../firebase';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
 import SummaryCards from '../components/SummaryCards';
 import FinishGameModal from '../components/FinishGameModal';
 
 interface GameScreenProps {
-  gameId: number;
+  /** ローカルのゲームID。ライブ閲覧（liveSessionCode 指定）時は未使用 */
+  gameId?: number;
   onFinish: () => void;
   onSuspend?: () => void;
   readOnly?: boolean;
+  /** 指定するとリアルタイム共有セッションを購読して読み取り専用で表示する */
+  liveSessionCode?: string;
+  /** ライブ閲覧した対局を履歴に保存した後に呼ばれる */
+  onSavedLiveGame?: (gameId: number) => void;
 }
 
-export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = false }: GameScreenProps) {
+type LiveViewStatus = 'connecting' | LiveSessionStatus;
+
+export default function GameScreen({
+  gameId: gameIdProp,
+  onFinish,
+  onSuspend,
+  readOnly: readOnlyProp = false,
+  liveSessionCode,
+  onSavedLiveGame,
+}: GameScreenProps) {
+  const gameId = gameIdProp ?? 0;
+  const isLiveViewer = !!liveSessionCode;
+  const readOnly = readOnlyProp || isLiveViewer;
   const [players, setPlayers] = useState<string[]>([]);
   const [playerCount, setPlayerCount] = useState(4);
   const [currentHanchan, setCurrentHanchan] = useState(1);
@@ -59,9 +84,164 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
   const scrollTopButtonOpacity = useRef(new Animated.Value(0)).current;
   const [showScrollTop, setShowScrollTop] = useState(false);
 
+  // ホスト側: リアルタイム共有
+  const [hostSession, setHostSession] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [showLiveModal, setShowLiveModal] = useState(false);
+  const [liveStarting, setLiveStarting] = useState(false);
+  const [liveSyncError, setLiveSyncError] = useState(false);
+
+  // 参加者側: ライブ閲覧
+  const [liveStatus, setLiveStatus] = useState<LiveViewStatus>('connecting');
+  const [liveGame, setLiveGame] = useState<ShareGameData | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [savedLiveGameId, setSavedLiveGameId] = useState<number | null>(null);
+
   useEffect(() => {
+    if (isLiveViewer) return;
     loadGameData();
+    if (!readOnly) {
+      const session = getLiveSession(gameId);
+      if (session && Date.now() < session.expiresAt) {
+        setHostSession(session);
+        // 再開時に最新状態を反映しておく
+        pushLiveUpdate(session);
+      } else if (session) {
+        setLiveSession(gameId, null);
+      }
+    }
   }, [gameId]);
+
+  // 参加者: セッションを購読して即時反映
+  useEffect(() => {
+    if (!liveSessionCode) return;
+    let receivedData = false;
+    const unsubscribe = getLiveSessionService().join(liveSessionCode, (event) => {
+      if (event.type === 'snapshot') {
+        receivedData = true;
+        const { snapshot } = event;
+        const records = shareDataToRecords(snapshot.game);
+        setLiveGame(snapshot.game);
+        setLiveStatus(snapshot.status);
+        setLiveError(null);
+        setPlayers(records.players);
+        setPlayerCount(records.playerCount);
+        setGameStartDate(records.startDate);
+        setScoreHistory(records.scores);
+        setChipHistory(records.chips);
+      } else if (event.type === 'notFound') {
+        if (receivedData) {
+          setLiveStatus('ended');
+        } else {
+          Alert.alert('参加エラー', `セッション「${liveSessionCode}」が見つかりません。\nコードを確認してください`, [
+            { text: 'OK', onPress: onFinish },
+          ]);
+        }
+      } else if (!receivedData) {
+        Alert.alert('参加エラー', 'セッションに接続できませんでした。通信環境を確認してください', [
+          { text: 'OK', onPress: onFinish },
+        ]);
+      } else {
+        setLiveError('接続が切れました。表示は最後に受信した内容です');
+      }
+    });
+    return unsubscribe;
+  }, [liveSessionCode]);
+
+  const pushLiveUpdate = (session: { code: string; expiresAt: number } | null = hostSession) => {
+    if (!session) return;
+    if (Date.now() >= session.expiresAt) {
+      // 有効期限切れ: 以降は同期しない
+      setLiveSession(gameId, null);
+      setHostSession(null);
+      return;
+    }
+    let data: ShareGameData;
+    try {
+      data = buildShareData(gameId);
+    } catch {
+      return;
+    }
+    getLiveSessionService()
+      .push(session.code, data)
+      .then(() => setLiveSyncError(false))
+      .catch(() => setLiveSyncError(true));
+  };
+
+  const endHostSession = () => {
+    if (!hostSession) return;
+    getLiveSessionService().end(hostSession.code).catch(() => {
+      // 期限切れ・通信断などで終了通知できなくても、ローカルの共有状態は解除する
+    });
+    setLiveSession(gameId, null);
+    setHostSession(null);
+    setLiveSyncError(false);
+  };
+
+  const handleStartLiveShare = async () => {
+    if (liveStarting) return;
+    setLiveStarting(true);
+    try {
+      const session = await getLiveSessionService().start(buildShareData(gameId));
+      setLiveSession(gameId, session);
+      setHostSession(session);
+      setLiveSyncError(false);
+      setShowLiveModal(true);
+    } catch {
+      Alert.alert('エラー', 'リアルタイム共有を開始できませんでした。\n通信環境を確認してください');
+    } finally {
+      setLiveStarting(false);
+    }
+  };
+
+  const handleEndLiveShare = () => {
+    Alert.alert(
+      'リアルタイム共有を終了',
+      '参加者への共有を終了しますか？\n参加者はその時点の対局を履歴に保存できます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '終了する',
+          style: 'destructive',
+          onPress: () => {
+            endHostSession();
+            setShowLiveModal(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCopyLiveCode = async () => {
+    if (!hostSession) return;
+    await Clipboard.setStringAsync(hostSession.code);
+    Alert.alert('コピー完了', 'セッションコードをクリップボードにコピーしました');
+  };
+
+  const handleShareLiveCode = async () => {
+    if (!hostSession) return;
+    try {
+      await Share.share({
+        message: `麻雀スコアシートモバイル リアルタイム共有\nセッションコード: ${hostSession.code}\n${buildSessionUrl(hostSession.code)}`,
+        title: '麻雀スコアシートモバイル - リアルタイム共有',
+      });
+    } catch {
+      // ユーザーがキャンセルした場合など
+    }
+  };
+
+  const handleSaveLiveGame = () => {
+    if (!liveGame || savedLiveGameId !== null) return;
+    try {
+      const newGameId = importShareData(liveGame);
+      setSavedLiveGameId(newGameId);
+      Alert.alert('完了', '対局を履歴に保存しました', [
+        { text: '閲覧する', onPress: () => onSavedLiveGame?.(newGameId) },
+        { text: 'OK' },
+      ]);
+    } catch (e: unknown) {
+      Alert.alert('エラー', e instanceof Error ? e.message : '保存に失敗しました');
+    }
+  };
 
   const loadGameData = () => {
     const game = getGameById(gameId);
@@ -140,6 +320,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     setCurrentHanchan(currentHanchan + 1);
     setScoreValues(new Array(players.length).fill(0));
     refreshHistory();
+    pushLiveUpdate();
     Alert.alert('完了', `第${currentHanchan}半荘のスコアを記録しました`);
   };
 
@@ -165,6 +346,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
     recordChip(gameId, currentHanchan - 1, chips);
     setChipValues(new Array(players.length).fill(0));
     refreshHistory();
+    pushLiveUpdate();
     Alert.alert('完了', 'チップ移動を記録しました');
   };
 
@@ -182,6 +364,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
             const nextHanchan = getNextHanchan(gameId);
             setCurrentHanchan(nextHanchan);
             refreshHistory();
+            pushLiveUpdate();
           },
         },
       ]
@@ -200,6 +383,7 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
           onPress: () => {
             chipIds.forEach(id => deleteChip(id));
             refreshHistory();
+            pushLiveUpdate();
           },
         },
       ]
@@ -268,6 +452,8 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
 
   const confirmFinishGame = () => {
     // 記録がない場合はゲームデータ自体を削除
+    // リアルタイム共有中ならセッションを終了する（参加者は履歴に保存可能になる）
+    endHostSession();
     if (scoreHistory.length === 0 && chipHistory.length === 0) {
       deleteGame(gameId);
     } else {
@@ -288,7 +474,19 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
         >
           {/* ヘッダー */}
           <View style={styles.header}>
-            {readOnly ? (
+            {isLiveViewer ? (
+              <>
+                <TouchableOpacity style={styles.backButton} onPress={onFinish}>
+                  <Text style={styles.backButtonText}>← 戻る</Text>
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>{gameStartDate}</Text>
+                <View style={[styles.liveBadge, liveStatus !== 'live' && styles.liveBadgeInactive]}>
+                  <Text style={styles.liveBadgeText}>
+                    {liveStatus === 'live' ? '● LIVE' : liveStatus === 'connecting' ? '接続中' : '終了'}
+                  </Text>
+                </View>
+              </>
+            ) : readOnly ? (
               <>
                 <TouchableOpacity style={styles.backButton} onPress={onFinish}>
                   <Text style={styles.backButtonText}>← 戻る</Text>
@@ -314,6 +512,55 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
               </>
             )}
           </View>
+
+          {isLiveViewer && (
+            <View style={styles.liveBanner}>
+              <Text style={styles.liveBannerTitle}>📡 リアルタイム共有 {liveSessionCode}</Text>
+              <Text style={styles.liveBannerText}>
+                {liveStatus === 'connecting'
+                  ? 'セッションに接続しています…'
+                  : liveStatus === 'live'
+                    ? 'ホストの入力が自動で反映されます（閲覧のみ）'
+                    : liveStatus === 'ended'
+                      ? 'ホストが共有を終了しました'
+                      : 'セッションの有効期限が切れました'}
+              </Text>
+              {liveError && <Text style={styles.liveBannerError}>{liveError}</Text>}
+              {(liveStatus === 'ended' || liveStatus === 'expired' || liveError) && liveGame && (
+                <TouchableOpacity
+                  style={[styles.liveBannerButton, savedLiveGameId !== null && styles.liveBannerButtonDisabled]}
+                  onPress={handleSaveLiveGame}
+                  disabled={savedLiveGameId !== null}
+                >
+                  <Text style={styles.liveBannerButtonText}>
+                    {savedLiveGameId !== null ? '保存済み' : '対局を履歴に保存'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {!readOnly && (
+            <TouchableOpacity
+              style={[styles.liveBanner, hostSession ? null : styles.liveBannerIdle]}
+              onPress={hostSession ? () => setShowLiveModal(true) : handleStartLiveShare}
+              disabled={liveStarting}
+            >
+              <Text style={styles.liveBannerTitle}>
+                {hostSession
+                  ? `📡 リアルタイム共有中  コード: ${hostSession.code}`
+                  : liveStarting ? '📡 リアルタイム共有を開始しています…' : '📡 リアルタイム共有を開始'}
+              </Text>
+              <Text style={styles.liveBannerText}>
+                {hostSession
+                  ? 'タップでコードの共有・共有の終了'
+                  : '同じ卓のメンバーがコードでスコアを閲覧できます'}
+              </Text>
+              {hostSession && liveSyncError && (
+                <Text style={styles.liveBannerError}>同期に失敗しました。通信が戻ると次の記録時に再送されます</Text>
+              )}
+            </TouchableOpacity>
+          )}
 
           {!readOnly && (
             <>
@@ -426,7 +673,52 @@ export default function GameScreen({ gameId, onFinish, onSuspend, readOnly = fal
             onCancel={() => setShowFinishModal(false)}
           />
         )}
-        {readOnly && (
+        {!readOnly && (
+          <Modal visible={showLiveModal && !!hostSession} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.shareModalContent}>
+                <Text style={styles.shareModalTitle}>リアルタイム共有</Text>
+                <Text style={styles.shareModalDescription}>
+                  参加者はセットアップ画面の「ゲームを取り込む」に{'\n'}
+                  このコードを入力すると、スコアをリアルタイムで閲覧できます。
+                </Text>
+                <Text style={styles.liveCodeText} selectable>{hostSession?.code}</Text>
+                {hostSession && (
+                  <Text style={styles.liveExpiresText}>
+                    有効期限: {new Date(hostSession.expiresAt).toLocaleString('ja-JP')}
+                  </Text>
+                )}
+                <View style={styles.shareModalButtons}>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalShareButton]}
+                    onPress={handleShareLiveCode}
+                  >
+                    <Text style={styles.shareModalButtonText}>送信する</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalCopyButton]}
+                    onPress={handleCopyLiveCode}
+                  >
+                    <Text style={styles.shareModalButtonText}>コードをコピー</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.liveEndButton]}
+                    onPress={handleEndLiveShare}
+                  >
+                    <Text style={styles.shareModalButtonText}>共有を終了</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.shareModalButton, styles.shareModalCloseButton]}
+                    onPress={() => setShowLiveModal(false)}
+                  >
+                    <Text style={styles.shareModalCloseText}>閉じる</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+        {readOnly && !isLiveViewer && (
           <Modal visible={showShareModal} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={styles.shareModalContent}>
@@ -687,6 +979,79 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  liveBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#dc3545',
+    borderRadius: 6,
+  },
+  liveBadgeInactive: {
+    backgroundColor: '#6c757d',
+  },
+  liveBadgeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  liveBanner: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    padding: 12,
+    marginBottom: 16,
+  },
+  liveBannerIdle: {
+    borderStyle: 'dashed',
+  },
+  liveBannerTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  liveBannerText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  liveBannerError: {
+    color: '#ffc107',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  liveBannerButton: {
+    backgroundColor: '#28a745',
+    borderRadius: 6,
+    padding: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  liveBannerButtonDisabled: {
+    backgroundColor: '#6c757d',
+  },
+  liveBannerButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  liveCodeText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    letterSpacing: 6,
+    color: '#1e3c72',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontFamily: 'monospace',
+  },
+  liveExpiresText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  liveEndButton: {
+    backgroundColor: '#dc3545',
   },
   scrollTopButton: {
     position: 'absolute',

@@ -1,0 +1,385 @@
+/**
+ * リアルタイム共有セッション（liveSession.ts）のテスト
+ * Firestore 通信部分は SessionBackend のモックで置き換える。
+ */
+import {
+  SESSION_CODE_ALPHABET,
+  SESSION_CODE_LENGTH,
+  SESSION_TTL_MS,
+  generateSessionCode,
+  normalizeSessionCode,
+  isValidSessionCode,
+  buildSessionUrl,
+  parseSessionUrl,
+  extractSessionCode,
+  buildSessionDoc,
+  buildSessionUpdate,
+  parseSessionDoc,
+  isSessionExpired,
+  createLiveSessionService,
+} from '../liveSession';
+import type { SessionBackend, SessionDoc, JoinEvent } from '../liveSession';
+import { buildShareUrl, encodeShareCode, parseShareUrl, shareDataToRecords } from '../utils';
+import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
+
+const NOW = 1_750_000_000_000;
+
+const game: ShareGameDataV2 = {
+  v: 2,
+  pc: 4,
+  d: '2026/11/24',
+  p: ['太郎', '花子', '次郎', '美咲'],
+  s: [
+    [1, 0, 30, NOW, '11月24日10:00'],
+    [1, 1, 10, NOW, '11月24日10:00'],
+    [1, 2, -10, NOW, '11月24日10:00'],
+    [1, 3, -30, NOW, '11月24日10:00'],
+  ],
+};
+
+// ---------- モックバックエンド ----------
+const createMockBackend = (uid = 'host-uid') => {
+  const docs = new Map<string, Record<string, unknown>>();
+  const listeners = new Map<string, Array<(doc: Record<string, unknown> | null) => void>>();
+  const notify = (code: string) => {
+    (listeners.get(code) || []).forEach(l => l(docs.has(code) ? { ...docs.get(code)! } : null));
+  };
+  const backend = {
+    getUid: jest.fn(async () => uid),
+    exists: jest.fn(async (code: string) => docs.has(code)),
+    create: jest.fn(async (code: string, doc: SessionDoc) => {
+      docs.set(code, { ...doc });
+      notify(code);
+    }),
+    update: jest.fn(async (code: string, patch: Partial<SessionDoc>) => {
+      if (!docs.has(code)) throw new Error('not-found');
+      docs.set(code, { ...docs.get(code)!, ...patch });
+      notify(code);
+    }),
+    subscribe: jest.fn((code: string, onNext: (doc: Record<string, unknown> | null) => void) => {
+      const list = listeners.get(code) || [];
+      list.push(onNext);
+      listeners.set(code, list);
+      onNext(docs.has(code) ? { ...docs.get(code)! } : null);
+      return () => {
+        listeners.set(code, (listeners.get(code) || []).filter(l => l !== onNext));
+      };
+    }),
+  };
+  return { backend: backend as jest.Mocked<SessionBackend> & typeof backend, docs, listeners };
+};
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// 固定の乱数列を返す
+const sequence = (values: number[]) => {
+  let i = 0;
+  return () => values[i++ % values.length];
+};
+
+describe('generateSessionCode', () => {
+  it('規定の長さ・文字種のコードを生成する', () => {
+    for (let i = 0; i < 100; i++) {
+      const code = generateSessionCode();
+      expect(code).toHaveLength(SESSION_CODE_LENGTH);
+      expect(isValidSessionCode(code)).toBe(true);
+    }
+  });
+
+  it('紛らわしい文字（I, O, 0, 1）を含まない', () => {
+    expect(SESSION_CODE_ALPHABET).not.toMatch(/[IO01]/);
+  });
+
+  it('乱数から決定的に生成される', () => {
+    expect(generateSessionCode(() => 0)).toBe('AAAAAA');
+    expect(generateSessionCode(() => 0.999999)).toBe('999999');
+  });
+});
+
+describe('normalizeSessionCode / isValidSessionCode', () => {
+  it('小文字・空白・ハイフンを正規化する', () => {
+    expect(normalizeSessionCode(' abc-23 4 ')).toBe('ABC234');
+  });
+
+  it('長さや文字種が違うコードは無効', () => {
+    expect(isValidSessionCode('ABC23')).toBe(false);
+    expect(isValidSessionCode('ABC2345')).toBe(false);
+    expect(isValidSessionCode('ABCDE0')).toBe(false);
+    expect(isValidSessionCode('abcdef')).toBe(false);
+    expect(isValidSessionCode('ABCDEF')).toBe(true);
+  });
+});
+
+describe('buildSessionUrl / parseSessionUrl', () => {
+  it('ラウンドトリップできる', () => {
+    const url = buildSessionUrl('ABC234');
+    expect(url).toBe('mahjong-score://live?code=ABC234');
+    expect(parseSessionUrl(url)).toBe('ABC234');
+  });
+
+  it('静的共有リンクや不正なコードは null', () => {
+    expect(parseSessionUrl(buildShareUrl('abc'))).toBeNull();
+    expect(parseSessionUrl('mahjong-score://live?code=XX')).toBeNull();
+    expect(parseSessionUrl('mahjong-score://live')).toBeNull();
+    expect(parseSessionUrl('https://example.com')).toBeNull();
+  });
+
+  it('静的共有リンクの解析はセッションリンクを無視する', () => {
+    expect(parseShareUrl(buildSessionUrl('ABC234'))).toBeNull();
+  });
+});
+
+describe('extractSessionCode', () => {
+  it('セッションコード・セッションリンクを判別する', () => {
+    expect(extractSessionCode('abc234')).toBe('ABC234');
+    expect(extractSessionCode('  ABC-234\n')).toBe('ABC234');
+    expect(extractSessionCode('mahjong-score://live?code=ABC234')).toBe('ABC234');
+  });
+
+  it('静的共有コード・リンクは null（従来の取り込みに回す）', () => {
+    const shareCode = encodeShareCode(JSON.stringify(game));
+    expect(extractSessionCode(shareCode)).toBeNull();
+    expect(extractSessionCode(buildShareUrl(shareCode))).toBeNull();
+  });
+});
+
+describe('buildSessionDoc / buildSessionUpdate', () => {
+  it('共有データJSON・ホスト・作成日時・24時間後の有効期限を持つ', () => {
+    const doc = buildSessionDoc(game, 'uid-1', NOW);
+    expect(doc).toEqual({
+      data: JSON.stringify(game),
+      hostUid: 'uid-1',
+      createdAt: NOW,
+      updatedAt: NOW,
+      expiresAt: NOW + SESSION_TTL_MS,
+      ended: false,
+    });
+    expect(SESSION_TTL_MS).toBe(24 * 60 * 60 * 1000);
+    expect(JSON.parse(doc.data)).toEqual(game);
+  });
+
+  it('更新はデータと更新日時のみ', () => {
+    expect(buildSessionUpdate(game, NOW + 5)).toEqual({ data: JSON.stringify(game), updatedAt: NOW + 5 });
+  });
+});
+
+describe('parseSessionDoc / isSessionExpired', () => {
+  const doc = buildSessionDoc(game, 'uid-1', NOW);
+
+  it('有効期限内は live', () => {
+    const snap = parseSessionDoc(doc, NOW + 1000);
+    expect(snap?.status).toBe('live');
+    expect(snap?.game).toEqual(game);
+    expect(snap?.expiresAt).toBe(NOW + SESSION_TTL_MS);
+  });
+
+  it('有効期限を過ぎると expired', () => {
+    expect(isSessionExpired(doc, NOW + SESSION_TTL_MS)).toBe(true);
+    expect(isSessionExpired(doc, NOW + SESSION_TTL_MS - 1)).toBe(false);
+    expect(parseSessionDoc(doc, NOW + SESSION_TTL_MS)?.status).toBe('expired');
+  });
+
+  it('ended フラグがあれば ended', () => {
+    expect(parseSessionDoc({ ...doc, ended: true }, NOW)?.status).toBe('ended');
+  });
+
+  it('不正なドキュメントは null', () => {
+    expect(parseSessionDoc(null, NOW)).toBeNull();
+    expect(parseSessionDoc({ ...doc, data: 'not json' }, NOW)).toBeNull();
+    expect(parseSessionDoc({ ...doc, data: JSON.stringify({ v: 9 }) }, NOW)).toBeNull();
+    expect(parseSessionDoc({ ...doc, expiresAt: 'x' }, NOW)).toBeNull();
+  });
+});
+
+describe('shareDataToRecords', () => {
+  it('v2: プレイヤー名を復元し順位を再計算する', () => {
+    const records = shareDataToRecords(game, NOW);
+    expect(records.players).toEqual(game.p);
+    expect(records.playerCount).toBe(4);
+    expect(records.startDate).toBe('2026/11/24');
+    expect(records.scores.map(s => [s.player_name, s.point, s.rank])).toEqual([
+      ['太郎', 30, 1],
+      ['花子', 10, 2],
+      ['次郎', -10, 3],
+      ['美咲', -30, 4],
+    ]);
+    expect(records.chips).toEqual([]);
+  });
+
+  it('記録は新しい順に並ぶ', () => {
+    const data: ShareGameDataV2 = {
+      ...game,
+      s: [
+        [1, 0, 10, NOW, 'a'], [1, 1, -10, NOW, 'a'],
+        [2, 0, -20, NOW + 100, 'b'], [2, 1, 20, NOW + 100, 'b'],
+      ],
+      p: ['A', 'B'],
+      pc: 3,
+      c: [[1, 0, 2, NOW + 50, 'c'], [1, 1, -2, NOW + 50, 'c']],
+    };
+    const records = shareDataToRecords(data, NOW);
+    expect(records.scores.map(s => s.hanchan)).toEqual([2, 2, 1, 1]);
+    expect(records.scores.find(s => s.hanchan === 2 && s.player_name === 'B')?.rank).toBe(1);
+    expect(records.chips.map(c => [c.player_name, c.chip_point, c.timestamp])).toEqual([
+      ['A', 2, NOW + 50],
+      ['B', -2, NOW + 50],
+    ]);
+    expect(new Set(records.chips.map(c => c.id)).size).toBe(2);
+  });
+
+  it('タイムスタンプなしの旧データはフォールバック値を使う', () => {
+    const data: ShareGameDataV2 = {
+      v: 2, pc: 3, d: '2025/06/01', p: ['A', 'B', 'C'],
+      s: [[1, 0, 10], [1, 1, 0], [1, 2, -10]],
+      c: [[1, 0, 1], [1, 1, -1], [2, 0, 1], [2, 2, -1]],
+    };
+    const records = shareDataToRecords(data, NOW);
+    expect(records.scores.every(s => s.timestamp === NOW && s.formatted_time === '6月1日')).toBe(true);
+    // チップは半荘ごとに異なるタイムスタンプ（HistoryTable のグループ化用）
+    expect(records.chips.filter(c => c.hanchan === 1).every(c => c.timestamp === NOW + 1)).toBe(true);
+    expect(records.chips.filter(c => c.hanchan === 2).every(c => c.timestamp === NOW + 2)).toBe(true);
+  });
+
+  it('v1: 記録をそのまま使う', () => {
+    const data: ShareGameDataV1 = {
+      v: 1, pc: 3, d: '2025/06/01', p: ['A', 'B', 'C'],
+      s: [[1, 'A', 10, 1, NOW, 't'], [1, 'B', -10, 3, NOW, 't'], [1, 'C', 0, 2, NOW, 't']],
+      c: [[1, 'A', 1, NOW, 't'], [1, 'B', -1, NOW, 't']],
+    };
+    const records = shareDataToRecords(data, NOW);
+    expect(records.scores.map(s => s.rank)).toEqual([1, 3, 2]);
+    expect(records.chips).toHaveLength(2);
+  });
+});
+
+describe('createLiveSessionService', () => {
+  it('start: 匿名ユーザーをホストとしてセッションを作成する', async () => {
+    const { backend, docs } = createMockBackend('host-1');
+    const service = createLiveSessionService(backend, { now: () => NOW, random: () => 0 });
+
+    const result = await service.start(game);
+
+    expect(result).toEqual({ code: 'AAAAAA', expiresAt: NOW + SESSION_TTL_MS });
+    expect(backend.create).toHaveBeenCalledWith('AAAAAA', buildSessionDoc(game, 'host-1', NOW));
+    expect(docs.get('AAAAAA')?.hostUid).toBe('host-1');
+  });
+
+  it('start: コードが既存なら別のコードで再試行する', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('AAAAAA', { data: '{}' });
+    const service = createLiveSessionService(backend, {
+      now: () => NOW,
+      // 1回目: AAAAAA（衝突）、2回目: BBBBBB
+      random: sequence([0, 0, 0, 0, 0, 0, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32]),
+    });
+
+    const result = await service.start(game);
+
+    expect(result.code).toBe('BBBBBB');
+    expect(backend.exists).toHaveBeenCalledTimes(2);
+    expect(backend.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('start: 試行回数を超えて衝突したらエラー', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('AAAAAA', { data: '{}' });
+    const service = createLiveSessionService(backend, { random: () => 0, maxAttempts: 3 });
+
+    await expect(service.start(game)).rejects.toThrow('セッションコードの発行に失敗しました');
+    expect(backend.exists).toHaveBeenCalledTimes(3);
+    expect(backend.create).not.toHaveBeenCalled();
+  });
+
+  it('push / end: ドキュメントを更新する', async () => {
+    const { backend, docs } = createMockBackend();
+    let now = NOW;
+    const service = createLiveSessionService(backend, { now: () => now, random: () => 0 });
+    const { code } = await service.start(game);
+
+    const updated: ShareGameDataV2 = { ...game, s: [...game.s, [2, 0, -5, NOW + 10, 't'], [2, 1, 5, NOW + 10, 't']] };
+    now = NOW + 10;
+    await service.push(code, updated);
+    expect(backend.update).toHaveBeenLastCalledWith(code, { data: JSON.stringify(updated), updatedAt: NOW + 10 });
+    expect(JSON.parse(docs.get(code)!.data as string)).toEqual(updated);
+
+    now = NOW + 20;
+    await service.end(code);
+    expect(backend.update).toHaveBeenLastCalledWith(code, { ended: true, updatedAt: NOW + 20 });
+    expect(docs.get(code)!.ended).toBe(true);
+    // 作成時の情報は維持される
+    expect(docs.get(code)!.hostUid).toBe('host-uid');
+    expect(docs.get(code)!.expiresAt).toBe(NOW + SESSION_TTL_MS);
+  });
+
+  it('push: バックエンドのエラーを呼び出し元に伝える', async () => {
+    const { backend } = createMockBackend();
+    const service = createLiveSessionService(backend);
+    await expect(service.push('ZZZZZZ', game)).rejects.toThrow('not-found');
+  });
+
+  it('join: ホストの変更が参加者に即時通知される', async () => {
+    const { backend } = createMockBackend();
+    const service = createLiveSessionService(backend, { now: () => NOW, random: () => 0 });
+    const { code } = await service.start(game);
+
+    const events: JoinEvent[] = [];
+    const unsubscribe = service.join(code, e => events.push(e));
+    await flush();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'live', game } });
+
+    const updated: ShareGameDataV2 = { ...game, d: '2026/11/25' };
+    await service.push(code, updated);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({ type: 'snapshot', snapshot: { status: 'live', game: updated } });
+
+    await service.end(code);
+    expect(events[2]).toMatchObject({ type: 'snapshot', snapshot: { status: 'ended' } });
+
+    // 購読解除後は通知されない
+    unsubscribe();
+    await service.push(code, game);
+    expect(events).toHaveLength(3);
+  });
+
+  it('join: 存在しないコードは notFound', async () => {
+    const { backend } = createMockBackend();
+    const service = createLiveSessionService(backend);
+    const events: JoinEvent[] = [];
+    service.join('ZZZZZZ', e => events.push(e));
+    await flush();
+    expect(events).toEqual([{ type: 'notFound' }]);
+  });
+
+  it('join: 不正なデータはエラーとして通知する', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('ZZZZZZ', { data: 'broken', expiresAt: NOW + 1 });
+    const service = createLiveSessionService(backend, { now: () => NOW });
+    const events: JoinEvent[] = [];
+    service.join('ZZZZZZ', e => events.push(e));
+    await flush();
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('error');
+  });
+
+  it('join: 認証失敗はエラーとして通知し、購読しない', async () => {
+    const { backend } = createMockBackend();
+    backend.getUid.mockRejectedValueOnce(new Error('auth failed'));
+    const service = createLiveSessionService(backend);
+    const events: JoinEvent[] = [];
+    service.join('ABCDEF', e => events.push(e));
+    await flush();
+    expect(events).toEqual([{ type: 'error', error: new Error('auth failed') }]);
+    expect(backend.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('join: 認証完了前に解除した場合は購読しない', async () => {
+    const { backend } = createMockBackend();
+    const service = createLiveSessionService(backend);
+    const unsubscribe = service.join('ABCDEF', () => {});
+    unsubscribe();
+    await flush();
+    expect(backend.subscribe).not.toHaveBeenCalled();
+  });
+});

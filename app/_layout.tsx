@@ -5,6 +5,7 @@ import * as Linking from 'expo-linking';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initDatabase, getCurrentGame, finishGame, importGameData } from '../database';
 import { parseShareUrl } from '../utils';
+import { parseSessionUrl } from '../liveSession';
 
 export default function RootLayout() {
   const [dbReady] = useState(() => {
@@ -27,6 +28,13 @@ export default function RootLayout() {
   }, []);
 
   const handleDeepLink = useCallback((url: string) => {
+    // リアルタイム共有のセッションリンク: 閲覧のみでローカルデータは変更しないため確認不要
+    const sessionCode = parseSessionUrl(url);
+    if (sessionCode) {
+      router.replace({ pathname: '/', params: { liveCode: sessionCode } });
+      return;
+    }
+
     const code = parseShareUrl(url);
     if (!code) return;
 
