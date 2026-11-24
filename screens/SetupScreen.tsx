@@ -18,15 +18,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, importGameData } from '../database';
 import { parseShareUrl } from '../utils';
+import { extractSessionCode } from '../liveSession';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
   onResumeGame: (gameId: number) => void;
   onViewPastGames: () => void;
   onImportGame: (gameId: number) => void;
+  onJoinLiveSession: (code: string) => void;
 }
 
-export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onImportGame }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onImportGame, onJoinLiveSession }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
@@ -162,6 +164,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     const rawInput = importCode.trim();
     if (!rawInput) {
       Alert.alert('入力エラー', '共有リンクまたはコードを入力してください');
+      return;
+    }
+    // リアルタイム共有のセッションコード（またはセッションリンク）ならライブ閲覧に参加
+    const sessionCode = extractSessionCode(rawInput);
+    if (sessionCode) {
+      setShowImportModal(false);
+      setImportCode('');
+      onJoinLiveSession(sessionCode);
       return;
     }
     // URLからコード部分を抽出、URLでなければそのまま使用
@@ -333,13 +343,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
               <Text style={styles.importModalDescription}>
-                共有されたリンクまたはコードを貼り付けてください
+                共有されたリンクまたはコードを貼り付けてください。{'\n'}
+                リアルタイム共有の6文字のセッションコードを入力すると、進行中の対局を閲覧できます
               </Text>
               <TextInput
                 style={styles.importCodeInput}
                 value={importCode}
                 onChangeText={setImportCode}
-                placeholder="共有リンクまたはコードを貼り付け"
+                placeholder="共有リンク・コード、またはセッションコード"
                 multiline
                 autoFocus
               />

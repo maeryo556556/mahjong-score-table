@@ -6,12 +6,13 @@ import SetupScreen from '../screens/SetupScreen';
 import GameScreen from '../screens/GameScreen';
 import PastGamesScreen from '../screens/PastGamesScreen';
 
-type Screen = 'setup' | 'game' | 'pastGames' | 'viewPastGame';
+type Screen = 'setup' | 'game' | 'pastGames' | 'viewPastGame' | 'liveView';
 
 export default function Index() {
-  const { viewGameId } = useLocalSearchParams<{ viewGameId?: string }>();
+  const { viewGameId, liveCode } = useLocalSearchParams<{ viewGameId?: string; liveCode?: string }>();
   const [screen, setScreen] = useState<Screen>('setup');
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
+  const [liveSessionCode, setLiveSessionCode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -30,6 +31,30 @@ export default function Index() {
       setScreen('viewPastGame');
     }
   }, [viewGameId]);
+
+  // セッションリンク経由の参加: _layout.tsx から liveCode 付きでリダイレクトされる
+  useEffect(() => {
+    if (liveCode) {
+      setLiveSessionCode(liveCode);
+      setScreen('liveView');
+    }
+  }, [liveCode]);
+
+  const handleJoinLiveSession = (code: string) => {
+    setLiveSessionCode(code);
+    setScreen('liveView');
+  };
+
+  const handleLeaveLiveSession = () => {
+    setLiveSessionCode(null);
+    setScreen('setup');
+  };
+
+  const handleSavedLiveGame = (gameId: number) => {
+    setLiveSessionCode(null);
+    setCurrentGameId(gameId);
+    setScreen('viewPastGame');
+  };
 
   const handleStartGame = (gameId: number) => {
     setCurrentGameId(gameId);
@@ -90,6 +115,14 @@ export default function Index() {
       {screen === 'viewPastGame' && currentGameId && (
         <GameScreen gameId={currentGameId} onFinish={handleBackFromPastGame} readOnly />
       )}
+      {screen === 'liveView' && liveSessionCode && (
+        <GameScreen
+          key={liveSessionCode}
+          liveSessionCode={liveSessionCode}
+          onFinish={handleLeaveLiveSession}
+          onSavedLiveGame={handleSavedLiveGame}
+        />
+      )}
       {screen === 'pastGames' && (
         <PastGamesScreen
           onSelectGame={handleSelectPastGame}
@@ -102,6 +135,7 @@ export default function Index() {
           onResumeGame={handleResumeGame}
           onViewPastGames={handleViewPastGames}
           onImportGame={handleImportGame}
+          onJoinLiveSession={handleJoinLiveSession}
         />
       )}
     </View>
