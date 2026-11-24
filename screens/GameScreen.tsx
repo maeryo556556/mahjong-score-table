@@ -418,7 +418,7 @@ export default function GameScreen({
     if (finishedSharePublishing) return;
     Alert.alert(
       'ゲームを共有',
-      '6文字のセッションコードを発行して共有します。\nコードの有効期限は発行から24時間です。',
+      '6桁の数字のセッションコードを発行して共有します。\nコードの有効期限は発行から24時間です。',
       [
         { text: 'キャンセル', style: 'cancel' },
         { text: 'コードで共有', onPress: publishFinishedShare },

@@ -74,7 +74,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       title: 'ゲームの共有',
       steps: [
         '過去のゲーム画面で「共有」→「コードで共有」',
-        '6文字のセッションコード（24時間有効）を送信',
+        '6桁の数字のセッションコード（24時間有効）を送信',
         '相手は「ゲームを取り込む」からコードを入力',
       ],
     },
@@ -169,7 +169,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     const sessionCode = extractSessionCode(rawInput);
     if (!sessionCode) {
       // 静的共有コード（廃止）やその他の文字列はエラー
-      Alert.alert('エラー', 'コードが正しくありません。\n6文字のセッションコードまたは共有リンクを入力してください');
+      Alert.alert('エラー', 'コードが正しくありません。\n6桁の数字のセッションコードまたは共有リンクを入力してください');
       return;
     }
     setShowImportModal(false);
@@ -330,14 +330,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
               <Text style={styles.importModalDescription}>
-                共有された6文字のセッションコードまたはリンクを入力してください。{'\n'}
+                共有された6桁の数字のセッションコードまたはリンクを入力してください。{'\n'}
                 進行中の対局はリアルタイムで閲覧でき、終了した対局は履歴に保存できます
               </Text>
               <TextInput
                 style={styles.importCodeInput}
                 value={importCode}
                 onChangeText={setImportCode}
-                placeholder="セッションコード（例: ABC234）または共有リンク"
+                placeholder="セッションコード（例: 123456）または共有リンク"
                 multiline
                 autoFocus
               />

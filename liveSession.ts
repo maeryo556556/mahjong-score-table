@@ -11,8 +11,8 @@ import { validateShareData, DEEP_LINK_SCHEME } from './utils';
 import type { ShareGameData } from './utils';
 
 export const SESSIONS_COLLECTION = 'sessions';
-// 読み間違えやすい文字（I, O, 0, 1）を除いた英数字
-export const SESSION_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// 入力しやすさを優先し数字のみとする（Issue #48）
+export const SESSION_CODE_ALPHABET = '0123456789';
 export const SESSION_CODE_LENGTH = 6;
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 export const LIVE_DEEP_LINK_HOST = 'live';

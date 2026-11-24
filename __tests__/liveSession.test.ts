@@ -86,40 +86,47 @@ describe('generateSessionCode', () => {
     }
   });
 
-  it('紛らわしい文字（I, O, 0, 1）を含まない', () => {
-    expect(SESSION_CODE_ALPHABET).not.toMatch(/[IO01]/);
+  it('文字種は数字のみ', () => {
+    expect(SESSION_CODE_ALPHABET).toBe('0123456789');
+    for (let i = 0; i < 100; i++) {
+      expect(generateSessionCode()).toMatch(/^[0-9]{6}$/);
+    }
   });
 
   it('乱数から決定的に生成される', () => {
-    expect(generateSessionCode(() => 0)).toBe('AAAAAA');
+    expect(generateSessionCode(() => 0)).toBe('000000');
     expect(generateSessionCode(() => 0.999999)).toBe('999999');
   });
 });
 
 describe('normalizeSessionCode / isValidSessionCode', () => {
-  it('小文字・空白・ハイフンを正規化する', () => {
-    expect(normalizeSessionCode(' abc-23 4 ')).toBe('ABC234');
+  it('空白・ハイフンを除去する', () => {
+    expect(normalizeSessionCode(' 123-45 6 ')).toBe('123456');
   });
 
   it('長さや文字種が違うコードは無効', () => {
-    expect(isValidSessionCode('ABC23')).toBe(false);
-    expect(isValidSessionCode('ABC2345')).toBe(false);
-    expect(isValidSessionCode('ABCDE0')).toBe(false);
+    expect(isValidSessionCode('12345')).toBe(false);
+    expect(isValidSessionCode('1234567')).toBe(false);
+    expect(isValidSessionCode('12345A')).toBe(false);
+    expect(isValidSessionCode('ABC234')).toBe(false);
     expect(isValidSessionCode('abcdef')).toBe(false);
-    expect(isValidSessionCode('ABCDEF')).toBe(true);
+    expect(isValidSessionCode('12 345')).toBe(false);
+    expect(isValidSessionCode('123456')).toBe(true);
+    expect(isValidSessionCode('000000')).toBe(true);
   });
 });
 
 describe('buildSessionUrl / parseSessionUrl', () => {
   it('ラウンドトリップできる', () => {
-    const url = buildSessionUrl('ABC234');
-    expect(url).toBe('mahjong-score://live?code=ABC234');
-    expect(parseSessionUrl(url)).toBe('ABC234');
+    const url = buildSessionUrl('123456');
+    expect(url).toBe('mahjong-score://live?code=123456');
+    expect(parseSessionUrl(url)).toBe('123456');
   });
 
   it('旧静的共有リンクや不正なコードは null', () => {
     expect(parseSessionUrl('mahjong-score://import?code=abc')).toBeNull();
-    expect(parseSessionUrl('mahjong-score://import?code=ABC234')).toBeNull();
+    expect(parseSessionUrl('mahjong-score://import?code=123456')).toBeNull();
+    expect(parseSessionUrl('mahjong-score://live?code=ABC234')).toBeNull();
     expect(parseSessionUrl('mahjong-score://live?code=XX')).toBeNull();
     expect(parseSessionUrl('mahjong-score://live')).toBeNull();
     expect(parseSessionUrl('https://example.com')).toBeNull();
@@ -128,9 +135,9 @@ describe('buildSessionUrl / parseSessionUrl', () => {
 
 describe('extractSessionCode', () => {
   it('セッションコード・セッションリンクを判別する', () => {
-    expect(extractSessionCode('abc234')).toBe('ABC234');
-    expect(extractSessionCode('  ABC-234\n')).toBe('ABC234');
-    expect(extractSessionCode('mahjong-score://live?code=ABC234')).toBe('ABC234');
+    expect(extractSessionCode('123456')).toBe('123456');
+    expect(extractSessionCode('  123-456\n')).toBe('123456');
+    expect(extractSessionCode('mahjong-score://live?code=123456')).toBe('123456');
   });
 
   it('旧静的共有コード・リンクやその他の文字列は null', () => {
@@ -138,6 +145,7 @@ describe('extractSessionCode', () => {
     expect(extractSessionCode(legacyCode)).toBeNull();
     expect(extractSessionCode(`mahjong-score://import?code=${encodeURIComponent(legacyCode)}`)).toBeNull();
     expect(extractSessionCode('hello')).toBeNull();
+    expect(extractSessionCode('ABC234')).toBeNull();
   });
 });
 
@@ -270,30 +278,30 @@ describe('createLiveSessionService', () => {
 
     const result = await service.start(game);
 
-    expect(result).toEqual({ code: 'AAAAAA', expiresAt: NOW + SESSION_TTL_MS });
-    expect(backend.create).toHaveBeenCalledWith('AAAAAA', buildSessionDoc(game, 'host-1', NOW));
-    expect(docs.get('AAAAAA')?.hostUid).toBe('host-1');
+    expect(result).toEqual({ code: '000000', expiresAt: NOW + SESSION_TTL_MS });
+    expect(backend.create).toHaveBeenCalledWith('000000', buildSessionDoc(game, 'host-1', NOW));
+    expect(docs.get('000000')?.hostUid).toBe('host-1');
   });
 
   it('start: コードが既存なら別のコードで再試行する', async () => {
     const { backend, docs } = createMockBackend();
-    docs.set('AAAAAA', { data: '{}' });
+    docs.set('000000', { data: '{}' });
     const service = createLiveSessionService(backend, {
       now: () => NOW,
-      // 1回目: AAAAAA（衝突）、2回目: BBBBBB
-      random: sequence([0, 0, 0, 0, 0, 0, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32]),
+      // 1回目: 000000（衝突）、2回目: 111111
+      random: sequence([0, 0, 0, 0, 0, 0, 1 / 10, 1 / 10, 1 / 10, 1 / 10, 1 / 10, 1 / 10]),
     });
 
     const result = await service.start(game);
 
-    expect(result.code).toBe('BBBBBB');
+    expect(result.code).toBe('111111');
     expect(backend.exists).toHaveBeenCalledTimes(2);
     expect(backend.create).toHaveBeenCalledTimes(1);
   });
 
   it('start: 試行回数を超えて衝突したらエラー', async () => {
     const { backend, docs } = createMockBackend();
-    docs.set('AAAAAA', { data: '{}' });
+    docs.set('000000', { data: '{}' });
     const service = createLiveSessionService(backend, { random: () => 0, maxAttempts: 3 });
 
     await expect(service.start(game)).rejects.toThrow('セッションコードの発行に失敗しました');
@@ -307,9 +315,9 @@ describe('createLiveSessionService', () => {
 
     const result = await service.publishFinished(game);
 
-    expect(result).toEqual({ code: 'AAAAAA', expiresAt: NOW + SESSION_TTL_MS });
-    expect(backend.create).toHaveBeenCalledWith('AAAAAA', buildSessionDoc(game, 'host-1', NOW, true));
-    const doc = docs.get('AAAAAA')!;
+    expect(result).toEqual({ code: '000000', expiresAt: NOW + SESSION_TTL_MS });
+    expect(backend.create).toHaveBeenCalledWith('000000', buildSessionDoc(game, 'host-1', NOW, true));
+    const doc = docs.get('000000')!;
     expect(doc.ended).toBe(true);
     expect(doc.hostUid).toBe('host-1');
     expect(doc.expiresAt).toBe(NOW + SESSION_TTL_MS);
@@ -322,24 +330,24 @@ describe('createLiveSessionService', () => {
     let now = NOW;
     const service = createLiveSessionService(backend, {
       now: () => now,
-      // 1回目: AAAAAA、2回目: AAAAAA（衝突）→ BBBBBB
-      random: sequence([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32]),
+      // 1回目: 000000、2回目: 000000（衝突）→ 111111
+      random: sequence([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 / 10, 1 / 10, 1 / 10, 1 / 10, 1 / 10, 1 / 10]),
     });
 
     const first = await service.publishFinished(game);
     now = NOW + 60_000;
     const second = await service.publishFinished(game);
 
-    expect(first.code).toBe('AAAAAA');
-    expect(second.code).toBe('BBBBBB');
+    expect(first.code).toBe('000000');
+    expect(second.code).toBe('111111');
     expect(second.expiresAt).toBe(NOW + 60_000 + SESSION_TTL_MS);
     expect(docs.size).toBe(2);
-    expect(docs.get('BBBBBB')?.ended).toBe(true);
+    expect(docs.get('111111')?.ended).toBe(true);
   });
 
   it('publishFinished: 試行回数を超えて衝突したらエラー', async () => {
     const { backend, docs } = createMockBackend();
-    docs.set('AAAAAA', { data: '{}' });
+    docs.set('000000', { data: '{}' });
     const service = createLiveSessionService(backend, { random: () => 0, maxAttempts: 2 });
 
     await expect(service.publishFinished(game)).rejects.toThrow('セッションコードの発行に失敗しました');
@@ -445,7 +453,7 @@ describe('createLiveSessionService', () => {
     backend.getUid.mockRejectedValueOnce(new Error('auth failed'));
     const service = createLiveSessionService(backend);
     const events: JoinEvent[] = [];
-    service.join('ABCDEF', e => events.push(e));
+    service.join('123456', e => events.push(e));
     await flush();
     expect(events).toEqual([{ type: 'error', error: new Error('auth failed') }]);
     expect(backend.subscribe).not.toHaveBeenCalled();
@@ -454,7 +462,7 @@ describe('createLiveSessionService', () => {
   it('join: 認証完了前に解除した場合は購読しない', async () => {
     const { backend } = createMockBackend();
     const service = createLiveSessionService(backend);
-    const unsubscribe = service.join('ABCDEF', () => {});
+    const unsubscribe = service.join('123456', () => {});
     unsubscribe();
     await flush();
     expect(backend.subscribe).not.toHaveBeenCalled();
