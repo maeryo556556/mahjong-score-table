@@ -228,7 +228,7 @@ export const hasPlayerNamesChanged = (currentNames: readonly string[], newNames:
 export const MAX_SAVED_GAMES = 100;
 
 /**
- * お気に入りの上限。超える登録をすると古いお気に入りから自動で解除する（データは通常データとして残す）。
+ * お気に入りの上限。上限に達している状態では新たに登録できない（メッセージを表示し、自動解除はしない）。
  * お気に入りは最大20件なので、保存枠（100件）がお気に入りだけで埋まることはない。
  */
 export const MAX_FAVORITE_GAMES = 20;
@@ -263,28 +263,12 @@ export const selectGamesToPrune = (
     .map(g => g.id);
 };
 
-export interface FavoriteGame {
-  id: number;
-  /** お気に入りに登録した日時（Unix time ミリ秒）。不明な場合は null */
-  favorited_at: number | null;
-}
-
 /**
- * 新たに1件お気に入り登録する前に、上限を超えないよう解除すべき既存のお気に入りのIDを返す。
- * 登録日時が古いものから解除する（登録日時が不明なものは最も古いとみなし、同順位は id の昇順）。
- * newId が既にお気に入りに含まれている場合は件数が増えないため、何も解除しない。
+ * お気に入りに登録できるか。上限（20件）に達している場合は登録できない（自動解除はしない）。
+ * 既にお気に入りのゲームは件数が増えないため常に true。
  */
-export const selectFavoritesToRelease = (
-  favorites: readonly FavoriteGame[],
-  newId: number,
+export const canAddFavorite = (
+  favoriteIds: readonly number[],
+  gameId: number,
   limit: number = MAX_FAVORITE_GAMES
-): number[] => {
-  if (favorites.some(f => f.id === newId)) return [];
-  const overflow = favorites.length + 1 - Math.max(1, limit);
-  if (overflow <= 0) return [];
-  return favorites
-    .slice()
-    .sort((a, b) => ((a.favorited_at ?? -Infinity) - (b.favorited_at ?? -Infinity)) || (a.id - b.id))
-    .slice(0, overflow)
-    .map(f => f.id);
-};
+): boolean => favoriteIds.includes(gameId) || favoriteIds.length < limit;

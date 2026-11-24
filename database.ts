@@ -5,7 +5,7 @@ import {
   formatDate,
   formatTime,
   selectGamesToPrune,
-  selectFavoritesToRelease,
+  canAddFavorite,
   MAX_SAVED_GAMES,
   MAX_FAVORITE_GAMES,
 } from './utils';
@@ -109,11 +109,6 @@ export const initDatabase = () => {
   // お気に入り（Issue #60）
   try {
     getDb().runSync('ALTER TABLE games ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
-  } catch {
-    // カラムが既に存在する場合は無視
-  }
-  try {
-    getDb().runSync('ALTER TABLE games ADD COLUMN favorited_at INTEGER');
   } catch {
     // カラムが既に存在する場合は無視
   }
@@ -221,27 +216,26 @@ export const pruneOldGames = (protectIds: number[] = [], limit: number = MAX_SAV
 };
 
 /**
- * お気に入りの登録・解除。
- * 登録で上限（20件）を超える場合は、登録日時の古いお気に入りから自動で解除する（データは通常データとして残す）。
- * 自動で解除したゲームのIDを返す。お気に入りの登録・解除ではゲームを削除しない。
+ * お気に入りの登録・解除。お気に入りの登録・解除ではゲームを削除しない。
+ * 上限（20件）に達している状態での登録は行わず、'limit' を返す（自動解除はしない）。
  */
-export const setGameFavorite = (gameId: number, favorite: boolean, limit: number = MAX_FAVORITE_GAMES): number[] => {
+export const setGameFavorite = (
+  gameId: number,
+  favorite: boolean,
+  limit: number = MAX_FAVORITE_GAMES
+): 'added' | 'removed' | 'limit' => {
   if (!favorite) {
-    getDb().runSync('UPDATE games SET favorite = 0, favorited_at = NULL WHERE id = ?', [gameId]);
-    return [];
+    getDb().runSync('UPDATE games SET favorite = 0 WHERE id = ?', [gameId]);
+    return 'removed';
   }
-  let released: number[] = [];
-  getDb().withTransactionSync(() => {
-    const favorites = getDb().getAllSync<{ id: number; favorited_at: number | null }>(
-      'SELECT id, favorited_at FROM games WHERE favorite = 1'
-    );
-    released = selectFavoritesToRelease(favorites, gameId, limit);
-    released.forEach(id => {
-      getDb().runSync('UPDATE games SET favorite = 0, favorited_at = NULL WHERE id = ?', [id]);
-    });
-    getDb().runSync('UPDATE games SET favorite = 1, favorited_at = ? WHERE id = ?', [Date.now(), gameId]);
-  });
-  return released;
+  const favoriteIds = getDb()
+    .getAllSync<{ id: number }>('SELECT id FROM games WHERE favorite = 1')
+    .map(r => r.id);
+  if (!canAddFavorite(favoriteIds, gameId, limit)) {
+    return 'limit';
+  }
+  getDb().runSync('UPDATE games SET favorite = 1 WHERE id = ?', [gameId]);
+  return 'added';
 };
 
 // ゲームをIDで取得

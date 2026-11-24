@@ -97,21 +97,17 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
   };
 
   // お気に入りの登録・解除（Issue #60）
-  // 上限（20件）に達している場合は、最も古いお気に入りを自動で解除する（データは通常データとして残す）
+  // 上限（20件）に達している場合は登録せず、上限であることを伝える（自動解除はしない）
   const handleToggleFavorite = (game: ListGame) => {
-    const nextFavorite = game.favorite !== 1;
-    const released = setGameFavorite(game.id, nextFavorite);
-    refreshGames();
-    if (released.length > 0) {
-      const releasedDates = finishedGames
-        .filter(g => released.includes(g.id))
-        .map(g => g.start_date)
-        .join('、');
+    const result = setGameFavorite(game.id, game.favorite !== 1);
+    if (result === 'limit') {
       Alert.alert(
         'お気に入り',
-        `お気に入りは最大${MAX_FAVORITE_GAMES}件のため、古いお気に入り（${releasedDates}）を解除しました。\nデータは通常の履歴として残っています。`
+        `お気に入りは最大${MAX_FAVORITE_GAMES}件です。\n登録するには、ほかのお気に入りを解除してください。`
       );
+      return;
     }
+    refreshGames();
   };
 
   // 保存データのクリア（Issue #60: セットアップ画面から移動）

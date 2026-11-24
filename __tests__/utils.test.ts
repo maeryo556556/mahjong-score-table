@@ -11,7 +11,7 @@ import {
   hasPlayerNamesChanged,
   MAX_PLAYER_NAME_LENGTH,
   selectGamesToPrune,
-  selectFavoritesToRelease,
+  canAddFavorite,
   MAX_SAVED_GAMES,
   MAX_FAVORITE_GAMES,
 } from '../utils';
@@ -329,36 +329,25 @@ describe('selectGamesToPrune（保存上限: Issue #60）', () => {
   });
 });
 
-describe('selectFavoritesToRelease（お気に入り上限: Issue #60）', () => {
-  const makeFavorites = (count: number) =>
-    Array.from({ length: count }, (_, i) => ({ id: i + 1, favorited_at: 1000 + i }));
+describe('canAddFavorite（お気に入り上限: Issue #60）', () => {
+  const ids = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
 
-  it('上限未満なら何も解除しない', () => {
-    expect(selectFavoritesToRelease(makeFavorites(19), 100)).toEqual([]);
+  it('上限未満なら登録できる', () => {
+    expect(canAddFavorite([], 100)).toBe(true);
+    expect(canAddFavorite(ids(19), 100)).toBe(true);
   });
 
-  it('上限に達した状態で登録すると、最も古いお気に入りを解除する', () => {
-    expect(selectFavoritesToRelease(makeFavorites(20), 100)).toEqual([1]);
+  it('上限（20件）に達していると登録できない（自動解除はしない）', () => {
+    expect(canAddFavorite(ids(20), 100)).toBe(false);
+    expect(canAddFavorite(ids(21), 100)).toBe(false);
   });
 
-  it('登録日時の古い順に解除する（並び順に依存しない）', () => {
-    const favorites = [
-      { id: 10, favorited_at: 3000 },
-      { id: 11, favorited_at: 1000 },
-      { id: 12, favorited_at: 2000 },
-    ];
-    expect(selectFavoritesToRelease(favorites, 99, 2)).toEqual([11, 12]);
+  it('既にお気に入りのゲームは上限でも可（件数は増えない）', () => {
+    expect(canAddFavorite(ids(20), 5)).toBe(true);
   });
 
-  it('登録日時が不明なものは最も古いとみなす', () => {
-    const favorites = [
-      { id: 1, favorited_at: 1000 },
-      { id: 2, favorited_at: null },
-    ];
-    expect(selectFavoritesToRelease(favorites, 3, 2)).toEqual([2]);
-  });
-
-  it('既にお気に入りのゲームを再登録しても何も解除しない', () => {
-    expect(selectFavoritesToRelease(makeFavorites(20), 5)).toEqual([]);
+  it('上限値を指定できる', () => {
+    expect(canAddFavorite(ids(2), 100, 3)).toBe(true);
+    expect(canAddFavorite(ids(3), 100, 3)).toBe(false);
   });
 });
