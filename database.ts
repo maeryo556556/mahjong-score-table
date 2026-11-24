@@ -6,6 +6,7 @@ import {
   formatTime,
 } from './utils';
 import type { ShareGameData, ShareGameDataV2 } from './utils';
+import type { JoinedSession, LiveSessionStatus } from './liveSession';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -62,6 +63,18 @@ export const initDatabase = () => {
     CREATE INDEX IF NOT EXISTS idx_scores_hanchan ON scores(game_id, hanchan);
     CREATE INDEX IF NOT EXISTS idx_chips_game ON chips(game_id);
     CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
+
+    -- ゲストとして参加したリアルタイム共有セッション（Issue #58: 一覧から閲覧モードへ再入室する）
+    CREATE TABLE IF NOT EXISTS joined_sessions (
+      code TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      player_count INTEGER NOT NULL,
+      player_names TEXT NOT NULL,
+      hanchan_count INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL
+    );
   `);
 
   // 既存DBにfinishedカラムがない場合のマイグレーション
@@ -425,9 +438,101 @@ export const setLiveSession = (gameId: number, session: { code: string; expiresA
   );
 };
 
+// ゲーム途中のプレイヤー名変更（Issue #58）
+// 記録（scores / chips）はプレイヤー名で紐づいているため、あわせて書き換える。
+// 名前の入れ替え（A↔B）でも衝突しないよう、一度一時的な名前を経由する。
+export const renamePlayers = (gameId: number, newNames: string[]) => {
+  const currentNames = getPlayerNames(gameId);
+  if (currentNames.length !== newNames.length) {
+    throw new Error('プレイヤー数が一致しません');
+  }
+  const tempName = (i: number) => `__rename__${gameId}_${i}__`; // 4文字以内の実名とは衝突しない
+  getDb().withTransactionSync(() => {
+    currentNames.forEach((oldName, i) => {
+      getDb().runSync('UPDATE scores SET player_name = ? WHERE game_id = ? AND player_name = ?', [tempName(i), gameId, oldName]);
+      getDb().runSync('UPDATE chips SET player_name = ? WHERE game_id = ? AND player_name = ?', [tempName(i), gameId, oldName]);
+    });
+    newNames.forEach((newName, i) => {
+      getDb().runSync('UPDATE scores SET player_name = ? WHERE game_id = ? AND player_name = ?', [newName, gameId, tempName(i)]);
+      getDb().runSync('UPDATE chips SET player_name = ? WHERE game_id = ? AND player_name = ?', [newName, gameId, tempName(i)]);
+      getDb().runSync('UPDATE game_players SET player_name = ? WHERE game_id = ? AND sort_order = ?', [newName, gameId, i]);
+    });
+  });
+};
+
+// ---- ゲストとして参加したセッション（Issue #58） ----
+
+export const saveJoinedSession = (session: JoinedSession) => {
+  getDb().runSync(
+    `INSERT OR REPLACE INTO joined_sessions
+      (code, expires_at, status, start_date, player_count, player_names, hanchan_count, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      session.code,
+      session.expiresAt,
+      session.status,
+      session.startDate,
+      session.playerCount,
+      JSON.stringify(session.playerNames),
+      session.hanchanCount,
+      session.lastSeenAt,
+    ]
+  );
+};
+
+export const getJoinedSessions = (): JoinedSession[] => {
+  const rows = getDb().getAllSync<{
+    code: string;
+    expires_at: number;
+    status: string;
+    start_date: string;
+    player_count: number;
+    player_names: string;
+    hanchan_count: number;
+    last_seen_at: number;
+  }>('SELECT * FROM joined_sessions ORDER BY last_seen_at DESC');
+  return rows.map(row => {
+    let playerNames: string[] = [];
+    try {
+      const parsed = JSON.parse(row.player_names);
+      if (Array.isArray(parsed)) playerNames = parsed.filter((n): n is string => typeof n === 'string');
+    } catch {
+      // 壊れたデータは名前なしで表示する
+    }
+    return {
+      code: row.code,
+      expiresAt: row.expires_at,
+      status: row.status as LiveSessionStatus,
+      startDate: row.start_date,
+      playerCount: row.player_count,
+      playerNames,
+      hanchanCount: row.hanchan_count,
+      lastSeenAt: row.last_seen_at,
+    };
+  });
+};
+
+export const deleteJoinedSession = (code: string) => {
+  getDb().runSync('DELETE FROM joined_sessions WHERE code = ?', [code]);
+};
+
+// 期限切れの参加記録を削除する
+export const purgeExpiredJoinedSessions = (now: number = Date.now()) => {
+  getDb().runSync('DELETE FROM joined_sessions WHERE expires_at <= ?', [now]);
+};
+
+// 履歴に保存済み（取り込み済みゲームの受信元）のセッションコード
+export const getSavedLiveSessionCodes = (): Set<string> => {
+  const rows = getDb().getAllSync<{ live_session_code: string }>(
+    'SELECT live_session_code FROM games WHERE imported = 1 AND live_session_code IS NOT NULL'
+  );
+  return new Set(rows.map(r => r.live_session_code));
+};
+
 // ゲームデータクリア
 export const clearAllData = () => {
   getDb().withTransactionSync(() => {
+    getDb().runSync('DELETE FROM joined_sessions');
     getDb().runSync('DELETE FROM chips');
     getDb().runSync('DELETE FROM scores');
     getDb().runSync('DELETE FROM game_players');

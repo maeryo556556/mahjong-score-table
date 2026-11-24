@@ -3,8 +3,9 @@
 
 Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
-  - iphone/promo_1_setup.png ... promo_6_share.png (6 iPhone promotional screenshots)
-  - ipad/promo_1_setup.png ... promo_6_share.png (6 iPad promotional screenshots)
+  - iphone/promo_1_setup.png ... promo_8_live_viewer.png (8 iPhone promotional screenshots)
+  - ipad/promo_1_setup.png ... promo_8_live_viewer.png (8 iPad promotional screenshots)
+  ※ 使い方ガイド（SetupScreen）の画像も iphone/ のものを使う
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -566,7 +567,7 @@ def generate_promo_setup(output_path, config=IPHONE):
 
     # Section title
     cy = card_y + inner_pad
-    next_y = ps.draw_section_title(cx, cy, cw, "ゲーム設定")
+    next_y = ps.draw_section_title(cx, cy, cw, "新規ゲーム")
     d = ps.draw
 
     # 麻雀タイプ label
@@ -626,7 +627,7 @@ def generate_promo_setup(output_path, config=IPHONE):
 
     # ── Second Card: 過去のゲーム履歴管理 ──
     card2_y = card_y + card_h + s(16)
-    card2_h = s(170)
+    card2_h = s(226)
     ps.draw_card(card_x, card2_y, card_w, card2_h)
     d = ps.draw
     cy2 = card2_y + inner_pad
@@ -635,6 +636,8 @@ def generate_promo_setup(output_path, config=IPHONE):
     ps.draw_button(cx, by, cw, s(48), "過去のゲームを見る", GRAY_TEXT)
     by += s(56)
     ps.draw_button(cx, by, cw, s(48), "ゲームを取り込む", TEAL)
+    by += s(56)
+    ps.draw_button(cx, by, cw, s(48), "保存データをクリア", RED)
 
     phone_img = ps.get_image()
     promo = create_promo_frame(phone_img, "麻雀対戦スコア管理", "３麻４麻両対応！", config)
@@ -964,40 +967,24 @@ def generate_promo_past_games(output_path, config=IPHONE):
 
 # ── Promo 5: Share / Read-Only Screen ──
 
-def generate_promo_share(output_path, config=IPHONE):
-    """Read-only game view with share modal."""
-    ps = PhoneScreen(config)
-    d = ps.draw
+LIVE_YELLOW_TOP = (249, 168, 37)    # #f9a825  閲覧モードの背景（上）
+LIVE_YELLOW_BOTTOM = (253, 216, 53)  # #fdd835  閲覧モードの背景（下）
+LIVE_DARK_TEXT = (62, 39, 35)        # #3e2723  閲覧モードの文字色
+LIVE_BORDER = (245, 127, 23)         # #f57f17
+
+
+def draw_summary_card(ps, card_y):
+    """総合スコアカード（4人）を描画し、カード下端の y を返す。"""
     s = ps._s
     pad = ps.pad
-
-    ps.draw_status_bar()
-
-    # Header: ← 戻る | 2026/02/25 | 共有
-    hy = ps.y + s(4)
-    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(255, 255, 255, 50))
-    bf = font(s(14), jp=True)
-    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, WHITE)
-
-    tf = font(s(24), jp=True)
-    draw_centered_text(d, "2026/02/25", ps.w // 2, hy + s(0), tf, WHITE)
-
-    # Share button
-    share_x = ps.w - pad - s(50)
-    rrect(d, (share_x, hy, share_x + s(50), hy + s(32)), s(6), fill=BG_MED)
-    draw_centered_text(d, "共有", share_x + s(25), hy + s(6), bf, WHITE)
-
-    card_y = hy + s(48)
     card_x = pad
     card_w = ps.w - 2 * pad
     inner_pad = s(16)
     cx = card_x + inner_pad
     cw = card_w - 2 * inner_pad
 
-    # ── Summary Card ──
     card_h = s(240)
     ps.draw_card(card_x, card_y, card_w, card_h)
-    d = ps.draw
     cy = card_y + inner_pad
     cy = ps.draw_section_title(cx, cy, cw, "総合スコア")
     d = ps.draw
@@ -1031,78 +1018,205 @@ def generate_promo_share(output_path, config=IPHONE):
         rby = sy + sc_h - s(22)
         rrect(d, (rbx, rby, rbx + rtw + s(10), rby + s(16)), s(8), fill=accent)
         d.text((rbx + s(5), rby + s(1)), rank_text, fill=WHITE, font=rf)
+    return card_y + card_h
 
-    # ── Share Modal Overlay ──
-    # Semi-transparent overlay
+
+def draw_modal_overlay(ps, modal_h):
+    """半透明の背景と白いモーダルを描画し、モーダルの (x, y, w) を返す。"""
+    s = ps._s
     overlay = Image.new('RGBA', ps.img.size, (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rectangle((0, 0, ps.w, ps.h), fill=(0, 0, 0, 128))
     ps.img = Image.alpha_composite(ps.img, overlay)
-    d = ImageDraw.Draw(ps.img)
-    ps.draw = d
 
-    # Modal
     modal_w = ps.w - 2 * s(24)
-    modal_h = s(360)
     mx = s(24)
     my = (ps.h - modal_h) // 2
-
-    # Modal shadow
     mshadow = Image.new('RGBA', ps.img.size, (0, 0, 0, 0))
     msd = ImageDraw.Draw(mshadow)
     msd.rounded_rectangle((mx + 4, my + 4, mx + modal_w + 4, my + modal_h + 4),
                            radius=s(16), fill=(0, 0, 0, 60))
     mshadow = mshadow.filter(ImageFilter.GaussianBlur(12))
     ps.img = Image.alpha_composite(ps.img, mshadow)
-    d = ImageDraw.Draw(ps.img)
-    ps.draw = d
+    ps.draw = ImageDraw.Draw(ps.img)
+    rrect(ps.draw, (mx, my, mx + modal_w, my + modal_h), s(16), fill=WHITE)
+    return mx, my, modal_w
 
-    rrect(d, (mx, my, mx + modal_w, my + modal_h), s(16), fill=WHITE)
 
-    # Modal title
-    mtf = font(s(20), jp=True)
-    draw_centered_text(d, "ゲームを共有", ps.w // 2, my + s(20), mtf, SECTION_TITLE_COLOR)
+def draw_session_code_modal(ps, title, desc_lines, code, buttons):
+    """6桁のセッションコードを表示するモーダル（アプリの共有モーダルと同じ構成）。"""
+    s = ps._s
+    line_h = s(20)
+    modal_h = s(24) + s(32) + len(desc_lines) * line_h + s(16) + s(52) + s(28) + len(buttons) * s(52) + s(16)
+    mx, my, modal_w = draw_modal_overlay(ps, modal_h)
+    d = ps.draw
 
-    # Description
+    y = my + s(24)
+    draw_centered_text(d, title, ps.w // 2, y, font(s(20), jp=True), SECTION_TITLE_COLOR)
+    y += s(32)
     mdf = font(s(13), jp=True)
-    desc1 = "以下の共有コードを相手に送ってください。"
-    desc2 = "相手はセットアップ画面の「ゲームを取り込む」"
-    desc3 = "から入力できます。"
-    draw_centered_text(d, desc1, ps.w // 2, my + s(52), mdf, LIGHT_TEXT)
-    draw_centered_text(d, desc2, ps.w // 2, my + s(70), mdf, LIGHT_TEXT)
-    draw_centered_text(d, desc3, ps.w // 2, my + s(88), mdf, LIGHT_TEXT)
+    for line in desc_lines:
+        draw_centered_text(d, line, ps.w // 2, y, mdf, LIGHT_TEXT)
+        y += line_h
+    y += s(16)
+    # 6桁のコード（等幅・字間広め）
+    cf = font(s(36), bold=True)
+    spaced = " ".join(code)
+    draw_centered_text(d, spaced, ps.w // 2, y, cf, SECTION_TITLE_COLOR)
+    y += s(52)
+    draw_centered_text(d, "有効期限: 2026/2/26 21:30:00", ps.w // 2, y, font(s(12), jp=True), LIGHT_TEXT)
+    y += s(28)
 
-    # Code box
-    code_x = mx + s(20)
-    code_y = my + s(110)
-    code_w = modal_w - 2 * s(20)
-    code_h = s(80)
-    rrect(d, (code_x, code_y, code_x + code_w, code_y + code_h), s(8),
-           fill=CODE_BG, outline=INPUT_BORDER, width=1)
-    cf = font(s(11), mono=True)
-    d.text((code_x + s(10), code_y + s(8)), "eyJ2IjoxLCJwYyI6NCwicG4iOl", fill=DARK_TEXT, font=cf)
-    d.text((code_x + s(10), code_y + s(24)), "siWkRvbGxhciIsIuiKseiKsSIsIu", fill=DARK_TEXT, font=cf)
-    d.text((code_x + s(10), code_y + s(40)), "asoYjmiiIsIue+Ogjk5Il0sInNo...", fill=DARK_TEXT, font=cf)
-
-    # Buttons
-    btn_y = code_y + code_h + s(16)
-    btn_w = modal_w - 2 * s(20)
-    btn_h = s(44)
-    # 送信する
-    rrect(d, (code_x, btn_y, code_x + btn_w, btn_y + btn_h), s(8), fill=BG_MED)
+    bx = mx + s(24)
+    bw = modal_w - 2 * s(24)
+    bh = s(44)
     bbf = font(s(16), jp=True)
-    draw_centered_text(d, "送信する", code_x + btn_w // 2, btn_y + s(10), bbf, WHITE)
-    btn_y += btn_h + s(8)
-    # コピーする
-    rrect(d, (code_x, btn_y, code_x + btn_w, btn_y + btn_h), s(8), fill=GREEN)
-    draw_centered_text(d, "コピーする", code_x + btn_w // 2, btn_y + s(10), bbf, WHITE)
-    btn_y += btn_h + s(8)
-    # 閉じる
-    rrect(d, (code_x, btn_y, code_x + btn_w, btn_y + btn_h), s(8), fill=(240, 240, 240))
-    draw_centered_text(d, "閉じる", code_x + btn_w // 2, btn_y + s(10), bbf, LIGHT_TEXT)
+    for label, bg, fg in buttons:
+        rrect(d, (bx, y, bx + bw, y + bh), s(8), fill=bg)
+        draw_centered_text(d, label, bx + bw // 2, y + s(12), bbf, fg)
+        y += bh + s(8)
+
+
+def generate_promo_share(output_path, config=IPHONE):
+    """終了済みゲームの閲覧画面 + 6桁のセッションコード共有モーダル。"""
+    ps = PhoneScreen(config)
+    d = ps.draw
+    s = ps._s
+    pad = ps.pad
+
+    ps.draw_status_bar()
+
+    # Header: ← 戻る | 2026/02/25 | 共有
+    hy = ps.y + s(4)
+    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(255, 255, 255, 50))
+    bf = font(s(14), jp=True)
+    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, WHITE)
+    tf = font(s(24), jp=True)
+    draw_centered_text(d, "2026/02/25", ps.w // 2, hy + s(0), tf, WHITE)
+    share_x = ps.w - pad - s(50)
+    rrect(d, (share_x, hy, share_x + s(50), hy + s(32)), s(6), fill=BG_MED)
+    draw_centered_text(d, "共有", share_x + s(25), hy + s(6), bf, WHITE)
+
+    draw_summary_card(ps, hy + s(48))
+
+    draw_session_code_modal(
+        ps,
+        "ゲームを共有",
+        ["このコードを入力すると、対局を閲覧して", "履歴に保存できます。"],
+        "381604",
+        [("送信する", BG_MED, WHITE), ("コードをコピー", GREEN, WHITE), ("閉じる", (240, 240, 240), LIGHT_TEXT)],
+    )
 
     phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "ゲームの共有", "共有コードで友達にかんたん送信", config)
+    promo = create_promo_frame(phone_img, "ゲームの共有", "6桁のコードでかんたん共有", config)
+    promo.save(output_path, 'PNG')
+    print(f"Generated: {output_path}")
+
+
+def generate_promo_live_host(output_path, config=IPHONE):
+    """ホストのゲーム画面（リアルタイム共有中）+ セッションコードのモーダル。"""
+    ps = PhoneScreen(config)
+    d = ps.draw
+    s = ps._s
+    pad = ps.pad
+
+    ps.draw_status_bar()
+
+    # Header: 第3半荘 | 中断 | ゲーム終了
+    hy = ps.y + s(4)
+    d.text((pad, hy), "第3半荘", fill=WHITE, font=font(s(24), jp=True))
+    bf = font(s(13), jp=True)
+    fx = ps.w - pad - s(86)
+    rrect(d, (fx, hy, fx + s(86), hy + s(32)), s(6), fill=RED)
+    draw_centered_text(d, "ゲーム終了", fx + s(43), hy + s(8), bf, WHITE)
+    sx = fx - s(8) - s(50)
+    rrect(d, (sx, hy, sx + s(50), hy + s(32)), s(6), fill=(255, 255, 255, 50))
+    draw_centered_text(d, "中断", sx + s(25), hy + s(8), bf, WHITE)
+
+    # 共有中バナー（通常配色）
+    by = hy + s(48)
+    bw = ps.w - 2 * pad
+    rrect(d, (pad, by, pad + bw, by + s(60)), s(12), fill=(72, 104, 160), outline=(150, 172, 210), width=2)
+    d.text((pad + s(12), by + s(10)), "リアルタイム共有中  コード: 482915", fill=WHITE, font=font(s(15), jp=True))
+    d.text((pad + s(12), by + s(34)), "入力は自動で共有されます。タップでコードを表示",
+           fill=(235, 235, 235), font=font(s(12), jp=True))
+
+    draw_summary_card(ps, by + s(76))
+
+    draw_session_code_modal(
+        ps,
+        "リアルタイム共有",
+        ["参加者はセットアップ画面の「ゲームを取り込む」に", "このコードを入力すると、スコアを", "リアルタイムで閲覧できます。"],
+        "482915",
+        [("コードをコピー", GREEN, WHITE), ("閉じる", (240, 240, 240), LIGHT_TEXT)],
+    )
+
+    phone_img = ps.get_image()
+    promo = create_promo_frame(phone_img, "リアルタイム共有", "同じ卓のみんなでスコアを確認", config)
+    promo.save(output_path, 'PNG')
+    print(f"Generated: {output_path}")
+
+
+def generate_promo_live_viewer(output_path, config=IPHONE):
+    """ゲストの閲覧モード画面（黄色基調）。"""
+    ps = PhoneScreen(config)
+    draw_gradient_bg(ps.img, LIVE_YELLOW_TOP, LIVE_YELLOW_BOTTOM)
+    ps.draw = ImageDraw.Draw(ps.img)
+    d = ps.draw
+    s = ps._s
+    pad = ps.pad
+
+    ps.draw_status_bar()
+
+    # Header: ← 戻る | 2026/02/25 | 閲覧モード
+    hy = ps.y + s(4)
+    bf = font(s(14), jp=True)
+    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(226, 160, 40))
+    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, LIVE_DARK_TEXT)
+    draw_centered_text(d, "2026/02/25", ps.w // 2 - s(10), hy + s(2), font(s(20), jp=True), LIVE_DARK_TEXT)
+    badge_w = s(84)
+    bx = ps.w - pad - badge_w
+    rrect(d, (bx, hy + s(2), bx + badge_w, hy + s(30)), s(14), fill=RED)
+    draw_centered_text(d, "閲覧モード", bx + badge_w // 2, hy + s(8), font(s(13), jp=True), WHITE)
+
+    # 閲覧中バナー（コードは表示しない）
+    by = hy + s(48)
+    bw = ps.w - 2 * pad
+    rrect(d, (pad, by, pad + bw, by + s(60)), s(12), fill=(254, 240, 196), outline=LIVE_BORDER, width=3)
+    d.text((pad + s(12), by + s(10)), "閲覧中", fill=LIVE_DARK_TEXT, font=font(s(15), jp=True))
+    d.text((pad + s(12), by + s(34)), "ホストの入力が自動で反映されます（編集不可）",
+           fill=LIVE_DARK_TEXT, font=font(s(12), jp=True))
+
+    end_y = draw_summary_card(ps, by + s(76))
+
+    # 記録履歴カード（簡易）
+    hist_y = end_y + s(16)
+    card_w = ps.w - 2 * pad
+    hist_h = s(190)
+    ps.draw_card(pad, hist_y, card_w, hist_h)
+    d = ps.draw
+    cx = pad + s(16)
+    cw = card_w - s(32)
+    ty = ps.draw_section_title(cx, hist_y + s(16), cw, "記録履歴")
+    d = ps.draw
+    names = ["半荘", "太郎", "花子", "次郎", "美咲"]
+    rows = [["第1", "+32", "-15", "-8", "-9"], ["第2", "+41", "+12", "-20", "-33"], ["第3", "+14", "+26", "-14", "-26"]]
+    col_w = cw // len(names)
+    hf = font(s(12), jp=True)
+    for i, n in enumerate(names):
+        draw_centered_text(d, n, cx + col_w * i + col_w // 2, ty, hf, MED_TEXT)
+    ry = ty + s(26)
+    vf = font(s(13), bold=True)
+    for r in rows:
+        d.line((cx, ry - s(6), cx + cw, ry - s(6)), fill=SCORE_BOX_BORDER, width=2)
+        for i, v in enumerate(r):
+            color = MED_TEXT if i == 0 else (GREEN if v.startswith("+") else RED)
+            f = hf if i == 0 else vf
+            draw_centered_text(d, v, cx + col_w * i + col_w // 2, ry, f, color)
+        ry += s(30)
+
+    phone_img = ps.get_image()
+    promo = create_promo_frame(phone_img, "閲覧モード", "ホストの入力が自動で反映", config)
     promo.save(output_path, 'PNG')
     print(f"Generated: {output_path}")
 
@@ -1112,7 +1226,7 @@ def generate_promo_share(output_path, config=IPHONE):
 # ══════════════════════════════════════════════
 
 def generate_all_promos(output_dir, config):
-    """Generate all 6 promotional screenshots for a given device config."""
+    """Generate all 8 promotional screenshots for a given device config."""
     os.makedirs(output_dir, exist_ok=True)
     generate_promo_setup(os.path.join(output_dir, 'promo_1_setup.png'), config)
     generate_promo_score(os.path.join(output_dir, 'promo_2_score.png'), config)
@@ -1120,6 +1234,8 @@ def generate_all_promos(output_dir, config):
     generate_promo_summary(os.path.join(output_dir, 'promo_4_summary.png'), config)
     generate_promo_past_games(os.path.join(output_dir, 'promo_5_past_games.png'), config)
     generate_promo_share(os.path.join(output_dir, 'promo_6_share.png'), config)
+    generate_promo_live_host(os.path.join(output_dir, 'promo_7_live_share.png'), config)
+    generate_promo_live_viewer(os.path.join(output_dir, 'promo_8_live_viewer.png'), config)
 
 
 if __name__ == '__main__':

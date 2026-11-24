@@ -16,9 +16,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, getLastPlayerNames } from '../database';
+import {
+  createGame,
+  getFinishedGames,
+  getUnfinishedGames,
+  clearAllData,
+  finishGame,
+  deleteGame,
+  getLastPlayerNames,
+  getJoinedSessions,
+  getSavedLiveSessionCodes,
+} from '../database';
 import { buildDefaultPlayerNames } from '../utils';
-import { extractSessionCode, sanitizeSessionCodeInput, SESSION_CODE_LENGTH } from '../liveSession';
+import { extractSessionCode, sanitizeSessionCodeInput, selectRejoinableSessions, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
@@ -39,9 +49,12 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const guideListRef = useRef<FlatList>(null);
   const importCodeInputRef = useRef<TextInput>(null);
 
+  // 使い方ガイド（Issue #58: リアルタイム共有・閲覧モード・6桁のセッションコードに合わせて更新）
+  // 各スライドの画像は generate_assets.py で生成した画面イメージ（assets/iphone/）
   const guideSlides = [
     {
       title: 'ゲームの始め方',
+      image: require('../assets/iphone/promo_1_setup.png'),
       steps: [
         '3人麻雀 or 4人麻雀を選択',
         'プレイヤー名を入力（4文字以内）',
@@ -50,14 +63,16 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'スコアの記録',
+      image: require('../assets/iphone/promo_2_score.png'),
       steps: [
         'ドラムロールで各プレイヤーのポイントを入力',
-        '合計が ±0 になるよう調整',
-        '「スコアを記録」で保存',
+        '合計が ±0 になるよう調整して「スコアを記録」',
+        'プレイヤー名は対局の途中でも「プレイヤー名を変更」で修正できる',
       ],
     },
     {
       title: 'チップの記録',
+      image: require('../assets/iphone/promo_3_chip.png'),
       steps: [
         'チップ移動がある場合に入力',
         'こちらも合計 ±0 が必要',
@@ -66,6 +81,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'ゲームの中断・終了',
+      image: require('../assets/iphone/promo_4_summary.png'),
       steps: [
         '「中断」でゲームを一時保存（後で再開可能）',
         '「ゲーム終了」で最終結果を確定',
@@ -73,28 +89,38 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       ],
     },
     {
-      title: 'ゲームの共有',
+      title: 'リアルタイム共有',
+      image: require('../assets/iphone/promo_7_live_share.png'),
       steps: [
-        '過去のゲーム画面で「共有」→「コードで共有」',
-        '6桁の数字のセッションコード（24時間有効）を送信',
-        '相手は「ゲームを取り込む」からコードを入力',
+        'ゲーム画面の「リアルタイム共有を開始」をタップ',
+        '6桁の数字のセッションコードを同じ卓のメンバーに伝える',
+        '記録は自動で共有され、ゲーム終了で共有も終了（最長24時間）',
+      ],
+    },
+    {
+      title: '閲覧モード（参加する側）',
+      image: require('../assets/iphone/promo_8_live_viewer.png'),
+      steps: [
+        '「ゲームを取り込む」に6桁のセッションコードを入力',
+        'ホストの入力が自動で反映されます（編集不可）',
+        '戻った後も「過去のゲームを見る」から同じ対局を選べば再び閲覧できる',
+      ],
+    },
+    {
+      title: '過去のゲームと共有',
+      image: require('../assets/iphone/promo_6_share.png'),
+      steps: [
+        '「過去のゲームを見る」で終了した対局を確認',
+        '「共有」で6桁のセッションコード（24時間有効）を発行',
+        '受け取った側は閲覧して「対局を履歴に保存」できる',
       ],
     },
   ];
 
-  const mockupImages = [
-    require('../assets/iphone/promo_1_setup.png'),
-    require('../assets/iphone/promo_2_score.png'),
-    require('../assets/iphone/promo_3_chip.png'),
-    require('../assets/iphone/promo_4_summary.png'),
-    require('../assets/iphone/promo_5_past_games.png'),
-    require('../assets/iphone/promo_6_share.png'),
-  ];
-
-  const guideMockups: React.ReactNode[] = mockupImages.map((src, i) => (
+  const guideMockups: React.ReactNode[] = guideSlides.map((slide, i) => (
     <Image
       key={i}
-      source={src}
+      source={slide.image}
       style={g.mockupImage}
       resizeMode="contain"
     />
@@ -102,7 +128,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
 
   useEffect(() => {
     const finished = getFinishedGames();
-    setHasPastGames(finished.length > 0);
+    // 閲覧中の対局（ゲストとして参加したセッション）があれば一覧から再入室できるようにボタンを出す
+    let hasJoinedSessions = false;
+    try {
+      hasJoinedSessions = selectRejoinableSessions(getJoinedSessions(), getSavedLiveSessionCodes(), Date.now()).length > 0;
+    } catch {
+      // 読めなくても続行する
+    }
+    setHasPastGames(finished.length > 0 || hasJoinedSessions);
     setSuspendedGames(getUnfinishedGames());
     // 直近のゲームのプレイヤー名を初期値として入れておく（編集可能）
     try {
