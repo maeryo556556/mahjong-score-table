@@ -26,7 +26,7 @@ export default function HistoryTable({
   }> = [];
 
   // 半荘ごとにグループ化
-  const hanchanGroups: Record<number, any> = {};
+  const hanchanGroups: Record<string, any> = {};
   scoreHistory.forEach(score => {
     if (!hanchanGroups[score.hanchan]) {
       hanchanGroups[score.hanchan] = {

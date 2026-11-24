@@ -378,7 +378,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
                     <Text style={styles.guideTitle}>{item.title}</Text>
                     {guideMockups[index]}
                     <View style={styles.guideSteps}>
-                      {item.steps.map((step, i) => (
+                      {item.steps.map((step: string, i: number) => (
                         <View key={i} style={styles.guideStepRow}>
                           <View style={styles.guideStepBadge}>
                             <Text style={styles.guideStepBadgeText}>{i + 1}</Text>
