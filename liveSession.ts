@@ -66,6 +66,27 @@ export const extractSessionCode = (input: string): string | null => {
   return isValidSessionCode(code) ? code : null;
 };
 
+/**
+ * 6桁入力欄（Issue #53）用に入力文字列を整形する。
+ * セッションリンクが貼り付けられた場合はそのコードを、それ以外は数字だけを
+ * 取り出して先頭から最大6桁を返す。
+ */
+export const sanitizeSessionCodeInput = (input: string): string => {
+  const fromUrl = parseSessionUrl(input.trim());
+  if (fromUrl) return fromUrl;
+  return input.replace(/[^0-9]/g, '').slice(0, SESSION_CODE_LENGTH);
+};
+
+/**
+ * ローカルに保存したセッション情報がまだ有効か（コードがあり有効期限内か）。
+ * 過去のゲーム一覧で、ライブ共有中のゲームを判定するのに使う。
+ */
+export const isLocalSessionActive = (
+  code: string | null | undefined,
+  expiresAt: number | null | undefined,
+  now: number
+): boolean => !!code && typeof expiresAt === 'number' && now < expiresAt;
+
 // ---------- ドキュメント ----------
 
 /** sessions/{code} ドキュメント。時刻はすべて Unix ミリ秒 */

@@ -12,6 +12,8 @@ import {
   buildSessionUrl,
   parseSessionUrl,
   extractSessionCode,
+  sanitizeSessionCodeInput,
+  isLocalSessionActive,
   buildSessionDoc,
   buildSessionUpdate,
   parseSessionDoc,
@@ -146,6 +148,32 @@ describe('extractSessionCode', () => {
     expect(extractSessionCode(`mahjong-score://import?code=${encodeURIComponent(legacyCode)}`)).toBeNull();
     expect(extractSessionCode('hello')).toBeNull();
     expect(extractSessionCode('ABC234')).toBeNull();
+  });
+});
+
+describe('sanitizeSessionCodeInput', () => {
+  it('数字以外を取り除き、先頭6桁までにする', () => {
+    expect(sanitizeSessionCodeInput('12a3-4 5')).toBe('12345');
+    expect(sanitizeSessionCodeInput('12345678')).toBe('123456');
+    expect(sanitizeSessionCodeInput('')).toBe('');
+    expect(sanitizeSessionCodeInput('abc')).toBe('');
+  });
+
+  it('セッションリンクが貼り付けられた場合はそのコードを返す', () => {
+    expect(sanitizeSessionCodeInput(' mahjong-score://live?code=654321 ')).toBe('654321');
+  });
+});
+
+describe('isLocalSessionActive', () => {
+  it('コードがあり有効期限内なら true', () => {
+    expect(isLocalSessionActive('123456', NOW + 1, NOW)).toBe(true);
+  });
+
+  it('期限切れ・コードなし・期限なしは false', () => {
+    expect(isLocalSessionActive('123456', NOW, NOW)).toBe(false);
+    expect(isLocalSessionActive(null, NOW + 1, NOW)).toBe(false);
+    expect(isLocalSessionActive('123456', null, NOW)).toBe(false);
+    expect(isLocalSessionActive(undefined, undefined, NOW)).toBe(false);
   });
 });
 
