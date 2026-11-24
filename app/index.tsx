@@ -9,7 +9,7 @@ import PastGamesScreen from '../screens/PastGamesScreen';
 type Screen = 'setup' | 'game' | 'pastGames' | 'viewPastGame' | 'liveView';
 
 export default function Index() {
-  const { viewGameId, liveCode } = useLocalSearchParams<{ viewGameId?: string; liveCode?: string }>();
+  const { liveCode } = useLocalSearchParams<{ liveCode?: string }>();
   const [screen, setScreen] = useState<Screen>('setup');
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [liveSessionCode, setLiveSessionCode] = useState<string | null>(null);
@@ -23,14 +23,6 @@ export default function Index() {
     }
     setIsLoading(false);
   }, []);
-
-  // ディープリンク経由の取り込み後: _layout.tsx から viewGameId 付きでリダイレクトされる
-  useEffect(() => {
-    if (viewGameId) {
-      setCurrentGameId(Number(viewGameId));
-      setScreen('viewPastGame');
-    }
-  }, [viewGameId]);
 
   // セッションリンク経由の参加: _layout.tsx から liveCode 付きでリダイレクトされる
   useEffect(() => {
@@ -94,11 +86,6 @@ export default function Index() {
     setScreen('setup');
   };
 
-  const handleImportGame = (gameId: number) => {
-    setCurrentGameId(gameId);
-    setScreen('viewPastGame');
-  };
-
   if (isLoading) {
     return <View style={styles.container} />;
   }
@@ -134,7 +121,6 @@ export default function Index() {
           onStartGame={handleStartGame}
           onResumeGame={handleResumeGame}
           onViewPastGames={handleViewPastGames}
-          onImportGame={handleImportGame}
           onJoinLiveSession={handleJoinLiveSession}
         />
       )}

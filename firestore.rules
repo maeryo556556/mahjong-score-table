@@ -4,6 +4,7 @@ rules_version = '2';
 // - 匿名認証済みユーザーのみアクセス可能
 // - セッションコードを知っていれば読み取り可（一覧取得は不可）
 // - 書き込みは作成者（ホスト）のみ、有効期限内のみ
+// - 作成時は進行中（ended == false）と終了済みゲームの共有（ended == true、Issue #46）の両方を許可
 service cloud.firestore {
   match /databases/{database}/documents {
     match /sessions/{code} {
@@ -18,7 +19,7 @@ service cloud.firestore {
         && request.resource.data.data.size() < 500000
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt <= request.time + duration.value(25, 'h')
-        && request.resource.data.ended == false;
+        && request.resource.data.ended is bool;
 
       allow update: if request.auth != null
         && resource.data.hostUid == request.auth.uid

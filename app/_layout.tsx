@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Alert } from 'react-native';
+import { View } from 'react-native';
 import { Slot, router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initDatabase, getCurrentGame, finishGame, importGameData } from '../database';
-import { parseShareUrl } from '../utils';
+import { initDatabase } from '../database';
 import { parseSessionUrl } from '../liveSession';
 
 export default function RootLayout() {
@@ -13,51 +12,14 @@ export default function RootLayout() {
     return true;
   });
 
-  const doImport = useCallback((shareCode: string) => {
-    try {
-      const gameId = importGameData(shareCode);
-      Alert.alert('取り込み完了', 'ゲームデータを取り込みました', [
-        { text: 'OK', onPress: () => router.replace({ pathname: '/', params: { viewGameId: String(gameId) } }) },
-      ]);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : '共有リンクの読み取りに失敗しました';
-      Alert.alert('取り込みエラー', message, [
-        { text: 'OK', onPress: () => router.replace('/') },
-      ]);
-    }
-  }, []);
-
   const handleDeepLink = useCallback((url: string) => {
     // リアルタイム共有のセッションリンク: 閲覧のみでローカルデータは変更しないため確認不要
+    // それ以外（廃止した静的共有の mahjong-score://import?code=… を含む）は無視する
     const sessionCode = parseSessionUrl(url);
     if (sessionCode) {
       router.replace({ pathname: '/', params: { liveCode: sessionCode } });
-      return;
     }
-
-    const code = parseShareUrl(url);
-    if (!code) return;
-
-    const activeGame = getCurrentGame();
-    if (activeGame) {
-      Alert.alert(
-        '確認',
-        'ゲームが進行中です。\nゲームを中断して共有データを取り込みますか？',
-        [
-          { text: 'キャンセル', style: 'cancel' },
-          {
-            text: '中断して取り込む',
-            onPress: () => {
-              finishGame(activeGame.id);
-              doImport(code);
-            },
-          },
-        ]
-      );
-    } else {
-      doImport(code);
-    }
-  }, [doImport]);
+  }, []);
 
   useEffect(() => {
     // コールドスタート時のディープリンク

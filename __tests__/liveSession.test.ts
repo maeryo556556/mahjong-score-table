@@ -19,7 +19,7 @@ import {
   createLiveSessionService,
 } from '../liveSession';
 import type { SessionBackend, SessionDoc, JoinEvent } from '../liveSession';
-import { buildShareUrl, encodeShareCode, parseShareUrl, shareDataToRecords } from '../utils';
+import { shareDataToRecords } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
 const NOW = 1_750_000_000_000;
@@ -117,15 +117,12 @@ describe('buildSessionUrl / parseSessionUrl', () => {
     expect(parseSessionUrl(url)).toBe('ABC234');
   });
 
-  it('静的共有リンクや不正なコードは null', () => {
-    expect(parseSessionUrl(buildShareUrl('abc'))).toBeNull();
+  it('旧静的共有リンクや不正なコードは null', () => {
+    expect(parseSessionUrl('mahjong-score://import?code=abc')).toBeNull();
+    expect(parseSessionUrl('mahjong-score://import?code=ABC234')).toBeNull();
     expect(parseSessionUrl('mahjong-score://live?code=XX')).toBeNull();
     expect(parseSessionUrl('mahjong-score://live')).toBeNull();
     expect(parseSessionUrl('https://example.com')).toBeNull();
-  });
-
-  it('静的共有リンクの解析はセッションリンクを無視する', () => {
-    expect(parseShareUrl(buildSessionUrl('ABC234'))).toBeNull();
   });
 });
 
@@ -136,10 +133,11 @@ describe('extractSessionCode', () => {
     expect(extractSessionCode('mahjong-score://live?code=ABC234')).toBe('ABC234');
   });
 
-  it('静的共有コード・リンクは null（従来の取り込みに回す）', () => {
-    const shareCode = encodeShareCode(JSON.stringify(game));
-    expect(extractSessionCode(shareCode)).toBeNull();
-    expect(extractSessionCode(buildShareUrl(shareCode))).toBeNull();
+  it('旧静的共有コード・リンクやその他の文字列は null', () => {
+    const legacyCode = Buffer.from(JSON.stringify(game), 'utf8').toString('base64');
+    expect(extractSessionCode(legacyCode)).toBeNull();
+    expect(extractSessionCode(`mahjong-score://import?code=${encodeURIComponent(legacyCode)}`)).toBeNull();
+    expect(extractSessionCode('hello')).toBeNull();
   });
 });
 
@@ -156,6 +154,14 @@ describe('buildSessionDoc / buildSessionUpdate', () => {
     });
     expect(SESSION_TTL_MS).toBe(24 * 60 * 60 * 1000);
     expect(JSON.parse(doc.data)).toEqual(game);
+  });
+
+  it('ended を指定すると終了済みセッションのドキュメントになる（有効期限は同じく24時間）', () => {
+    const doc = buildSessionDoc(game, 'uid-1', NOW, true);
+    expect(doc.ended).toBe(true);
+    expect(doc.expiresAt).toBe(NOW + SESSION_TTL_MS);
+    expect(doc.createdAt).toBe(NOW);
+    expect(doc.updatedAt).toBe(NOW);
   });
 
   it('更新はデータと更新日時のみ', () => {
@@ -181,6 +187,11 @@ describe('parseSessionDoc / isSessionExpired', () => {
 
   it('ended フラグがあれば ended', () => {
     expect(parseSessionDoc({ ...doc, ended: true }, NOW)?.status).toBe('ended');
+  });
+
+  it('ended でも有効期限を過ぎていれば expired', () => {
+    expect(parseSessionDoc({ ...doc, ended: true }, NOW + SESSION_TTL_MS - 1)?.status).toBe('ended');
+    expect(parseSessionDoc({ ...doc, ended: true }, NOW + SESSION_TTL_MS)?.status).toBe('expired');
   });
 
   it('不正なドキュメントは null', () => {
@@ -288,6 +299,72 @@ describe('createLiveSessionService', () => {
     await expect(service.start(game)).rejects.toThrow('セッションコードの発行に失敗しました');
     expect(backend.exists).toHaveBeenCalledTimes(3);
     expect(backend.create).not.toHaveBeenCalled();
+  });
+
+  it('publishFinished: 最初から終了状態のセッションを24時間有効で作成する', async () => {
+    const { backend, docs } = createMockBackend('host-1');
+    const service = createLiveSessionService(backend, { now: () => NOW, random: () => 0 });
+
+    const result = await service.publishFinished(game);
+
+    expect(result).toEqual({ code: 'AAAAAA', expiresAt: NOW + SESSION_TTL_MS });
+    expect(backend.create).toHaveBeenCalledWith('AAAAAA', buildSessionDoc(game, 'host-1', NOW, true));
+    const doc = docs.get('AAAAAA')!;
+    expect(doc.ended).toBe(true);
+    expect(doc.hostUid).toBe('host-1');
+    expect(doc.expiresAt).toBe(NOW + SESSION_TTL_MS);
+    expect(JSON.parse(doc.data as string)).toEqual(game);
+    expect(backend.update).not.toHaveBeenCalled();
+  });
+
+  it('publishFinished: 呼ぶたびに新しいコードを発行する', async () => {
+    const { backend, docs } = createMockBackend();
+    let now = NOW;
+    const service = createLiveSessionService(backend, {
+      now: () => now,
+      // 1回目: AAAAAA、2回目: AAAAAA（衝突）→ BBBBBB
+      random: sequence([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32, 1 / 32]),
+    });
+
+    const first = await service.publishFinished(game);
+    now = NOW + 60_000;
+    const second = await service.publishFinished(game);
+
+    expect(first.code).toBe('AAAAAA');
+    expect(second.code).toBe('BBBBBB');
+    expect(second.expiresAt).toBe(NOW + 60_000 + SESSION_TTL_MS);
+    expect(docs.size).toBe(2);
+    expect(docs.get('BBBBBB')?.ended).toBe(true);
+  });
+
+  it('publishFinished: 試行回数を超えて衝突したらエラー', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('AAAAAA', { data: '{}' });
+    const service = createLiveSessionService(backend, { random: () => 0, maxAttempts: 2 });
+
+    await expect(service.publishFinished(game)).rejects.toThrow('セッションコードの発行に失敗しました');
+    expect(backend.create).not.toHaveBeenCalled();
+  });
+
+  it('publishFinished: 参加者には終了状態で表示され、発行から24時間後は期限切れになる', async () => {
+    const { backend } = createMockBackend();
+    let now = NOW;
+    const service = createLiveSessionService(backend, { now: () => now, random: () => 0 });
+    const { code } = await service.publishFinished(game);
+
+    const events: JoinEvent[] = [];
+    service.join(code, e => events.push(e));
+    await flush();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'ended', game } });
+
+    // 24時間経過後に参加した場合
+    now = NOW + SESSION_TTL_MS;
+    const lateEvents: JoinEvent[] = [];
+    service.join(code, e => lateEvents.push(e));
+    await flush();
+    expect(lateEvents[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'expired', game } });
   });
 
   it('push / end: ドキュメントを更新する', async () => {

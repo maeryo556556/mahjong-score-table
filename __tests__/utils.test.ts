@@ -3,13 +3,9 @@ import {
   isAllZero,
   calcTotal,
   clampValue,
-  encodeShareCode,
-  decodeShareCode,
   validateShareData,
   formatDate,
   formatTime,
-  buildShareUrl,
-  parseShareUrl,
 } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
@@ -116,36 +112,6 @@ describe('clampValue', () => {
   });
 });
 
-describe('encodeShareCode / decodeShareCode', () => {
-  it('ASCII文字列のラウンドトリップ', () => {
-    const original = '{"v":2,"pc":4,"d":"2025/01/15","p":["A","B","C","D"],"s":[[1,0,10],[1,1,-10],[1,2,5],[1,3,-5]]}';
-    const encoded = encodeShareCode(original);
-    const decoded = decodeShareCode(encoded);
-    expect(decoded).toBe(original);
-  });
-
-  it('日本語を含むデータのラウンドトリップ', () => {
-    const original = JSON.stringify({
-      v: 2,
-      pc: 3,
-      d: '2025/03/01',
-      p: ['太郎', '花子', '次郎'],
-      s: [[1, 0, 10], [1, 1, -5], [1, 2, -5]],
-    });
-    const encoded = encodeShareCode(original);
-    const decoded = decodeShareCode(encoded);
-    expect(decoded).toBe(original);
-    expect(JSON.parse(decoded).p).toEqual(['太郎', '花子', '次郎']);
-  });
-
-  it('空のスコア・チップデータ', () => {
-    const original = JSON.stringify({ v: 2, pc: 4, d: '2025/01/01', p: ['A', 'B', 'C', 'D'], s: [] });
-    const encoded = encodeShareCode(original);
-    const decoded = decodeShareCode(encoded);
-    expect(JSON.parse(decoded)).toEqual(JSON.parse(original));
-  });
-});
-
 describe('validateShareData', () => {
   it('v1形式のデータを有効と判定', () => {
     const data: ShareGameDataV1 = {
@@ -192,38 +158,6 @@ describe('validateShareData', () => {
 
   it('pに文字列以外が含まれれば無効', () => {
     expect(validateShareData({ v: 2, pc: 4, d: '2025/01/01', p: ['A', 123] })).toBe(false);
-  });
-});
-
-describe('buildShareUrl / parseShareUrl', () => {
-  it('共有コードからURL生成→パースのラウンドトリップ', () => {
-    const code = encodeShareCode(JSON.stringify({ v: 2, pc: 4, d: '2025/01/15', p: ['A', 'B', 'C', 'D'], s: [] }));
-    const url = buildShareUrl(code);
-    expect(url).toBe(`mahjong-score://import?code=${encodeURIComponent(code)}`);
-    expect(parseShareUrl(url)).toBe(code);
-  });
-
-  it('日本語データを含むURLのラウンドトリップ', () => {
-    const code = encodeShareCode(JSON.stringify({ v: 2, pc: 3, d: '2025/03/01', p: ['太郎', '花子', '次郎'], s: [[1, 0, 10]] }));
-    const url = buildShareUrl(code);
-    const parsed = parseShareUrl(url);
-    expect(parsed).toBe(code);
-    const decoded = JSON.parse(decodeShareCode(parsed!));
-    expect(decoded.p).toEqual(['太郎', '花子', '次郎']);
-  });
-
-  it('関係ないURLはnullを返す', () => {
-    expect(parseShareUrl('https://example.com')).toBeNull();
-    expect(parseShareUrl('mahjong-score://other')).toBeNull();
-  });
-
-  it('codeパラメータがないURLはnullを返す', () => {
-    expect(parseShareUrl('mahjong-score://import')).toBeNull();
-    expect(parseShareUrl('mahjong-score://import?other=abc')).toBeNull();
-  });
-
-  it('空文字列はnullを返す', () => {
-    expect(parseShareUrl('')).toBeNull();
   });
 });
 

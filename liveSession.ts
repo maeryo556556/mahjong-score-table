@@ -56,7 +56,7 @@ export const parseSessionUrl = (url: string): string | null => {
 
 /**
  * 取り込み欄の入力がセッションコード（またはセッションリンク）ならコードを返す。
- * 静的共有コード・共有リンクの場合は null。
+ * それ以外（旧静的共有コード・その他の文字列）は null。
  */
 export const extractSessionCode = (input: string): string | null => {
   const trimmed = input.trim();
@@ -79,13 +79,21 @@ export interface SessionDoc {
   ended: boolean;
 }
 
-export const buildSessionDoc = (game: ShareGameData, hostUid: string, now: number): SessionDoc => ({
+/**
+ * @param ended true なら最初から終了状態のセッション（終了済みゲームのコード共有）を作る
+ */
+export const buildSessionDoc = (
+  game: ShareGameData,
+  hostUid: string,
+  now: number,
+  ended: boolean = false
+): SessionDoc => ({
   data: JSON.stringify(game),
   hostUid,
   createdAt: now,
   updatedAt: now,
   expiresAt: now + SESSION_TTL_MS,
-  ended: false,
+  ended,
 });
 
 export const buildSessionUpdate = (game: ShareGameData, now: number): Pick<SessionDoc, 'data' | 'updatedAt'> => ({
@@ -116,9 +124,10 @@ export const parseSessionDoc = (raw: unknown, now: number): LiveSessionSnapshot 
     return null;
   }
   if (!validateShareData(game)) return null;
-  const status: LiveSessionStatus = d.ended === true
-    ? 'ended'
-    : isSessionExpired({ expiresAt: d.expiresAt }, now) ? 'expired' : 'live';
+  // 有効期限切れを優先する（終了済みゲームの共有も、発行から24時間後は期限切れとして扱う）
+  const status: LiveSessionStatus = isSessionExpired({ expiresAt: d.expiresAt }, now)
+    ? 'expired'
+    : d.ended === true ? 'ended' : 'live';
   return {
     status,
     game,
@@ -151,6 +160,11 @@ export type JoinEvent =
 export interface LiveSessionService {
   /** セッションを作成してコードと有効期限を返す */
   start(game: ShareGameData): Promise<{ code: string; expiresAt: number }>;
+  /**
+   * 終了済みゲームを最初から終了状態（ended: true）のセッションとして発行する。
+   * 有効期限は発行時刻から24時間。呼ぶたびに新しいコードを発行する。
+   */
+  publishFinished(game: ShareGameData): Promise<{ code: string; expiresAt: number }>;
   /** ホストのゲーム更新をセッションへ反映する */
   push(code: string, game: ShareGameData): Promise<void>;
   /** セッションを終了状態にする */
@@ -167,17 +181,25 @@ export const createLiveSessionService = (
   const random = options.random ?? Math.random;
   const maxAttempts = options.maxAttempts ?? 5;
 
+  const issue = async (game: ShareGameData, ended: boolean) => {
+    const uid = await backend.getUid();
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const code = generateSessionCode(random);
+      if (await backend.exists(code)) continue;
+      const doc = buildSessionDoc(game, uid, now(), ended);
+      await backend.create(code, doc);
+      return { code, expiresAt: doc.expiresAt };
+    }
+    throw new Error('セッションコードの発行に失敗しました');
+  };
+
   return {
-    async start(game) {
-      const uid = await backend.getUid();
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const code = generateSessionCode(random);
-        if (await backend.exists(code)) continue;
-        const doc = buildSessionDoc(game, uid, now());
-        await backend.create(code, doc);
-        return { code, expiresAt: doc.expiresAt };
-      }
-      throw new Error('セッションコードの発行に失敗しました');
+    start(game) {
+      return issue(game, false);
+    },
+
+    publishFinished(game) {
+      return issue(game, true);
     },
 
     async push(code, game) {
