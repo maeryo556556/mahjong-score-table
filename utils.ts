@@ -79,6 +79,17 @@ export const formatTime = (date: Date): string => {
 };
 
 // 共有データから復元した記録行（SQLite の scores / chips 行と同じ形）
+// 新規ゲームのプレイヤー名入力欄の初期値を作る。
+// 直近のゲームのプレイヤー名を先頭から詰め、足りない枠は空文字にする（常に4枠）。
+export const MAX_PLAYERS = 4;
+export const buildDefaultPlayerNames = (lastNames: readonly string[] | null | undefined): string[] => {
+  const names = new Array<string>(MAX_PLAYERS).fill('');
+  (lastNames ?? []).slice(0, MAX_PLAYERS).forEach((name, i) => {
+    names[i] = typeof name === 'string' ? name : '';
+  });
+  return names;
+};
+
 export interface ScoreRow {
   hanchan: number;
   player_name: string;

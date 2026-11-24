@@ -11,6 +11,7 @@ import {
   Animated,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -516,15 +517,27 @@ export default function GameScreen({
           {isLiveViewer && (
             <View style={[styles.liveBanner, isLiveMode && styles.liveBannerLive]}>
               <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>📡 リアルタイム共有 {liveSessionCode}</Text>
-              <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
-                {liveStatus === 'connecting'
-                  ? 'セッションに接続しています…'
-                  : liveStatus === 'live'
+              {liveStatus === 'connecting' ? (
+                <View style={[styles.loadingRow, styles.liveBannerLoadingRow]}>
+                  <ActivityIndicator
+                    size="small"
+                    color={isLiveMode ? '#3e2723' : '#fff'}
+                    style={styles.loadingIndicator}
+                    testID="live-join-loading"
+                  />
+                  <Text style={[styles.liveBannerText, styles.liveBannerLoadingText, isLiveMode && styles.liveModeSubText]}>
+                    セッションに接続しています…
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
+                  {liveStatus === 'live'
                     ? 'ホストの入力が自動で反映されます（閲覧のみ）'
                     : liveStatus === 'ended'
                       ? 'ホストが共有を終了しました'
                       : 'セッションの有効期限が切れました'}
-              </Text>
+                </Text>
+              )}
               {liveError && <Text style={[styles.liveBannerError, isLiveMode && styles.liveBannerErrorLive]}>{liveError}</Text>}
               {(liveStatus === 'ended' || liveStatus === 'expired' || liveError) && liveGame && (
                 <TouchableOpacity
@@ -567,9 +580,14 @@ export default function GameScreen({
               activeOpacity={0.7}
               accessibilityRole="button"
             >
-              <Text style={styles.liveStartButtonText}>
-                {liveStarting ? '📡 共有を開始しています…' : '📡 リアルタイム共有を開始'}
-              </Text>
+              <View style={styles.loadingRow}>
+                {liveStarting && (
+                  <ActivityIndicator size="small" color="#3e2723" style={styles.loadingIndicator} testID="live-start-loading" />
+                )}
+                <Text style={styles.liveStartButtonText}>
+                  {liveStarting ? '共有を開始しています…' : '📡 リアルタイム共有を開始'}
+                </Text>
+              </View>
               <Text style={styles.liveStartButtonSubText}>同じ卓のメンバーがコードでスコアを閲覧できます</Text>
             </TouchableOpacity>
           )}
@@ -613,7 +631,7 @@ export default function GameScreen({
               </View>
 
               {/* チップ移動 */}
-              <View style={styles.card}>
+              <View style={[styles.card, styles.chipCard]}>
                 <View style={styles.sectionTitleRow}>
                   <Text style={styles.sectionTitle}>🎉 チップ移動</Text>
                   {(() => {
@@ -651,6 +669,14 @@ export default function GameScreen({
               </View>
               </View>
             </>
+          )}
+
+          {/* ゲスト: 最初のデータを受け取るまでローディング表示 */}
+          {isLiveViewer && !liveGame && (
+            <View style={styles.liveConnectingCard}>
+              <ActivityIndicator size="large" color={isLiveMode ? '#3e2723' : '#fff'} testID="live-connecting-indicator" />
+              <Text style={[styles.liveConnectingText, isLiveMode && styles.liveModeText]}>接続中…</Text>
+            </View>
           )}
 
           {/* 総合スコア */}
@@ -1068,6 +1094,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
+  },
+  chipCard: {
+    // チップ移動エリアは薄いクリーム色で他の入力エリアと区別する
+    backgroundColor: '#fff8e1',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingIndicator: {
+    marginRight: 8,
+  },
+  liveBannerLoadingRow: {
+    justifyContent: 'flex-start',
+    marginTop: 4,
+  },
+  liveBannerLoadingText: {
+    marginTop: 0,
+  },
+  liveConnectingCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+  },
+  liveConnectingText: {
+    color: '#fff',
+    fontSize: 14,
+    marginTop: 12,
   },
   liveStartButtonDisabled: {
     opacity: 0.6,
