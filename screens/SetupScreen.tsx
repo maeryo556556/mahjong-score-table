@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame } from '../database';
+import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, getLastPlayerNames } from '../database';
+import { buildDefaultPlayerNames } from '../utils';
 import { extractSessionCode, sanitizeSessionCodeInput, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
@@ -103,6 +104,15 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     const finished = getFinishedGames();
     setHasPastGames(finished.length > 0);
     setSuspendedGames(getUnfinishedGames());
+    // 直近のゲームのプレイヤー名を初期値として入れておく（編集可能）
+    try {
+      const lastNames = getLastPlayerNames();
+      if (lastNames && lastNames.length > 0) {
+        setPlayerNames(buildDefaultPlayerNames(lastNames));
+      }
+    } catch {
+      // 取得に失敗しても空欄のまま続行する
+    }
   }, []);
 
   const handlePlayerCountChange = (count: number) => {
@@ -244,7 +254,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
           )}
 
           <View style={[styles.card, suspendedGames.length > 0 && styles.cardWithMarginTop]}>
-            <Text style={styles.sectionTitle}>ゲーム設定</Text>
+            <Text style={styles.sectionTitle}>新規ゲーム</Text>
 
             {/* 麻雀タイプ選択 */}
             <View style={styles.typeSelection}>

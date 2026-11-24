@@ -6,6 +6,7 @@ import {
   validateShareData,
   formatDate,
   formatTime,
+  buildDefaultPlayerNames,
 } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
@@ -181,5 +182,32 @@ describe('formatTime', () => {
   it('0時台のゼロパディング', () => {
     const date = new Date(2025, 2, 1, 0, 5);
     expect(formatTime(date)).toBe('3月1日00:05');
+  });
+});
+
+describe('buildDefaultPlayerNames', () => {
+  it('直近のゲームがない場合は空欄4枠を返す', () => {
+    expect(buildDefaultPlayerNames(null)).toEqual(['', '', '', '']);
+    expect(buildDefaultPlayerNames(undefined)).toEqual(['', '', '', '']);
+    expect(buildDefaultPlayerNames([])).toEqual(['', '', '', '']);
+  });
+
+  it('4人麻雀のプレイヤー名をそのまま入れる', () => {
+    expect(buildDefaultPlayerNames(['A', 'B', 'C', 'D'])).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('3人麻雀のプレイヤー名は4枠目を空欄にする', () => {
+    expect(buildDefaultPlayerNames(['A', 'B', 'C'])).toEqual(['A', 'B', 'C', '']);
+  });
+
+  it('5人以上の名前が渡されても4枠に収める', () => {
+    expect(buildDefaultPlayerNames(['A', 'B', 'C', 'D', 'E'])).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('元の配列を変更しない', () => {
+    const last = ['A', 'B', 'C'];
+    const result = buildDefaultPlayerNames(last);
+    result[0] = 'X';
+    expect(last).toEqual(['A', 'B', 'C']);
   });
 });

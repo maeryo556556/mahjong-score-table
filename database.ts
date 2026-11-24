@@ -236,6 +236,16 @@ export const getUnfinishedGames = () => {
   });
 };
 
+// 直近のゲーム（この端末で作成したもの）のプレイヤー名を取得
+// 共有から取り込んだゲーム（imported = 1）は他人の対局の可能性があるため除外する
+export const getLastPlayerNames = (): string[] | null => {
+  const game = getDb().getFirstSync<{ id: number }>(
+    'SELECT id FROM games WHERE imported = 0 ORDER BY created_at DESC, id DESC LIMIT 1'
+  );
+  if (!game) return null;
+  return getPlayerNames(game.id);
+};
+
 // ゲーム削除
 export const deleteGame = (gameId: number) => {
   getDb().withTransactionSync(() => {
