@@ -8,7 +8,6 @@ import {
   Alert,
   Modal,
   Share,
-  TextInput,
   Animated,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -28,13 +27,12 @@ import {
   getGameById,
   finishGame,
   deleteGame,
-  exportGameData,
   buildShareData,
   importShareData,
   getLiveSession,
   setLiveSession,
 } from '../database';
-import { buildShareUrl, shareDataToRecords } from '../utils';
+import { shareDataToRecords } from '../utils';
 import type { ShareGameData } from '../utils';
 import { buildSessionUrl } from '../liveSession';
 import type { LiveSessionStatus } from '../liveSession';
@@ -78,8 +76,9 @@ export default function GameScreen({
   const [scoreHistory, setScoreHistory] = useState<any[]>([]);
   const [chipHistory, setChipHistory] = useState<any[]>([]);
   const [showFinishModal, setShowFinishModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [shareCode, setShareCode] = useState('');
+  // 終了済みゲームのコード共有（ended: true のセッションとして発行）
+  const [finishedShare, setFinishedShare] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [finishedSharePublishing, setFinishedSharePublishing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollTopButtonOpacity = useRef(new Animated.Value(0)).current;
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -401,25 +400,43 @@ export default function GameScreen({
     );
   };
 
-  const handleShareGame = () => {
+  const publishFinishedShare = async () => {
+    if (finishedSharePublishing) return;
+    setFinishedSharePublishing(true);
     try {
-      const code = exportGameData(gameId);
-      setShareCode(buildShareUrl(code));
-      setShowShareModal(true);
+      // 共有するたびに新しいコードを発行する（有効期限は発行から24時間）
+      const session = await getLiveSessionService().publishFinished(buildShareData(gameId));
+      setFinishedShare(session);
     } catch {
-      Alert.alert('エラー', '共有コードの生成に失敗しました');
+      Alert.alert('エラー', '共有コードを発行できませんでした。\n通信環境を確認してください');
+    } finally {
+      setFinishedSharePublishing(false);
     }
   };
 
-  const handleCopyToClipboard = async () => {
-    await Clipboard.setStringAsync(shareCode);
-    Alert.alert('コピー完了', '共有リンクをクリップボードにコピーしました');
+  const handleShareGame = () => {
+    if (finishedSharePublishing) return;
+    Alert.alert(
+      'ゲームを共有',
+      '6文字のセッションコードを発行して共有します。\nコードの有効期限は発行から24時間です。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'コードで共有', onPress: publishFinishedShare },
+      ]
+    );
   };
 
-  const handleShareViaOS = async () => {
+  const handleCopyFinishedShareCode = async () => {
+    if (!finishedShare) return;
+    await Clipboard.setStringAsync(finishedShare.code);
+    Alert.alert('コピー完了', 'セッションコードをクリップボードにコピーしました');
+  };
+
+  const handleShareFinishedShareCode = async () => {
+    if (!finishedShare) return;
     try {
       await Share.share({
-        message: `麻雀スコアシートモバイル\n${shareCode}`,
+        message: `麻雀スコアシートモバイル ゲーム共有\nセッションコード: ${finishedShare.code}\n${buildSessionUrl(finishedShare.code)}`,
         title: '麻雀スコアシートモバイル - ゲーム共有',
       });
     } catch {
@@ -492,8 +509,8 @@ export default function GameScreen({
                   <Text style={styles.backButtonText}>← 戻る</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{gameStartDate}</Text>
-                <TouchableOpacity style={styles.shareButton} onPress={handleShareGame}>
-                  <Text style={styles.shareButtonText}>共有</Text>
+                <TouchableOpacity style={styles.shareButton} onPress={handleShareGame} disabled={finishedSharePublishing}>
+                  <Text style={styles.shareButtonText}>{finishedSharePublishing ? '発行中…' : '共有'}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -719,39 +736,36 @@ export default function GameScreen({
           </Modal>
         )}
         {readOnly && !isLiveViewer && (
-          <Modal visible={showShareModal} transparent animationType="fade">
+          <Modal visible={!!finishedShare} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={styles.shareModalContent}>
                 <Text style={styles.shareModalTitle}>ゲームを共有</Text>
                 <Text style={styles.shareModalDescription}>
-                  以下のリンクを相手に送ってください。{'\n'}
-                  リンクをタップするとアプリが開いて自動で取り込めます。
+                  相手はセットアップ画面の「ゲームを取り込む」に{'\n'}
+                  このコードを入力すると、対局を閲覧して履歴に保存できます。
                 </Text>
-                <View style={styles.shareCodeContainer}>
-                  <TextInput
-                    style={styles.shareCodeText}
-                    value={shareCode}
-                    editable={false}
-                    multiline
-                    selectTextOnFocus
-                  />
-                </View>
+                <Text style={styles.liveCodeText} selectable>{finishedShare?.code}</Text>
+                {finishedShare && (
+                  <Text style={styles.liveExpiresText}>
+                    有効期限: {new Date(finishedShare.expiresAt).toLocaleString('ja-JP')}
+                  </Text>
+                )}
                 <View style={styles.shareModalButtons}>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalShareButton]}
-                    onPress={handleShareViaOS}
+                    onPress={handleShareFinishedShareCode}
                   >
                     <Text style={styles.shareModalButtonText}>送信する</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCopyButton]}
-                    onPress={handleCopyToClipboard}
+                    onPress={handleCopyFinishedShareCode}
                   >
-                    <Text style={styles.shareModalButtonText}>コピーする</Text>
+                    <Text style={styles.shareModalButtonText}>コードをコピー</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCloseButton]}
-                    onPress={() => setShowShareModal(false)}
+                    onPress={() => setFinishedShare(null)}
                   >
                     <Text style={styles.shareModalCloseText}>閉じる</Text>
                   </TouchableOpacity>
@@ -938,20 +952,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     lineHeight: 20,
-  },
-  shareCodeContainer: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    maxHeight: 150,
-    marginBottom: 16,
-  },
-  shareCodeText: {
-    fontSize: 11,
-    color: '#333',
-    fontFamily: 'monospace',
   },
   shareModalButtons: {
     gap: 8,

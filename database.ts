@@ -1,7 +1,5 @@
 import * as SQLite from 'expo-sqlite';
 import {
-  encodeShareCode,
-  decodeShareCode,
   validateShareData,
   shareDataToRecords,
   formatDate,
@@ -339,15 +337,10 @@ export const buildShareData = (gameId: number): ShareGameDataV2 => {
   };
 };
 
-export const exportGameData = (gameId: number): string => {
-  return encodeShareCode(JSON.stringify(buildShareData(gameId)));
-};
-
-// 共有データを終了済み・取り込み済みゲームとして保存
-// （共有コードの取り込みと、ライブ共有終了後の保存で共通）
+// 共有データ（セッションから受信したもの）を終了済み・取り込み済みゲームとして保存
 export const importShareData = (data: ShareGameData): number => {
   if (!validateShareData(data)) {
-    throw new Error('共有コードの形式が正しくありません');
+    throw new Error('共有データの形式が正しくありません');
   }
 
   const now = Date.now();
@@ -383,18 +376,6 @@ export const importShareData = (data: ShareGameData): number => {
   });
 
   return gameId;
-};
-
-// 共有コードからゲームデータをインポート
-export const importGameData = (shareCode: string): number => {
-  let data: ShareGameData;
-  try {
-    const json = decodeShareCode(shareCode);
-    data = JSON.parse(json);
-  } catch {
-    throw new Error('共有コードが正しくありません');
-  }
-  return importShareData(data);
 };
 
 // ホスト側: ゲームに紐づくリアルタイム共有セッションの取得・保存

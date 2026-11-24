@@ -16,19 +16,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame, importGameData } from '../database';
-import { parseShareUrl } from '../utils';
+import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame } from '../database';
 import { extractSessionCode } from '../liveSession';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
   onResumeGame: (gameId: number) => void;
   onViewPastGames: () => void;
-  onImportGame: (gameId: number) => void;
   onJoinLiveSession: (code: string) => void;
 }
 
-export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onImportGame, onJoinLiveSession }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onJoinLiveSession }: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
@@ -75,8 +73,8 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     {
       title: 'ゲームの共有',
       steps: [
-        '過去のゲーム画面で「共有」をタップ',
-        '共有コードを相手に送信',
+        '過去のゲーム画面で「共有」→「コードで共有」',
+        '6文字のセッションコード（24時間有効）を送信',
         '相手は「ゲームを取り込む」からコードを入力',
       ],
     },
@@ -163,31 +161,20 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const handleImport = () => {
     const rawInput = importCode.trim();
     if (!rawInput) {
-      Alert.alert('入力エラー', '共有リンクまたはコードを入力してください');
+      Alert.alert('入力エラー', 'セッションコードまたは共有リンクを入力してください');
       return;
     }
-    // リアルタイム共有のセッションコード（またはセッションリンク）ならライブ閲覧に参加
+    // セッションコード（またはセッションリンク）ならセッションに参加する。
+    // 進行中なら閲覧、終了済みなら閲覧のうえ履歴に保存できる。
     const sessionCode = extractSessionCode(rawInput);
-    if (sessionCode) {
-      setShowImportModal(false);
-      setImportCode('');
-      onJoinLiveSession(sessionCode);
+    if (!sessionCode) {
+      // 静的共有コード（廃止）やその他の文字列はエラー
+      Alert.alert('エラー', 'コードが正しくありません。\n6文字のセッションコードまたは共有リンクを入力してください');
       return;
     }
-    // URLからコード部分を抽出、URLでなければそのまま使用
-    const code = parseShareUrl(rawInput) || rawInput;
-    try {
-      const gameId = importGameData(code);
-      setShowImportModal(false);
-      setImportCode('');
-      setHasPastGames(true);
-      Alert.alert('完了', 'ゲームデータを取り込みました', [
-        { text: '閲覧する', onPress: () => onImportGame(gameId) },
-        { text: 'OK' },
-      ]);
-    } catch (e: any) {
-      Alert.alert('エラー', e.message || '共有コードの読み取りに失敗しました');
-    }
+    setShowImportModal(false);
+    setImportCode('');
+    onJoinLiveSession(sessionCode);
   };
 
   const handleClearData = () => {
@@ -343,14 +330,14 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
               <Text style={styles.importModalDescription}>
-                共有されたリンクまたはコードを貼り付けてください。{'\n'}
-                リアルタイム共有の6文字のセッションコードを入力すると、進行中の対局を閲覧できます
+                共有された6文字のセッションコードまたはリンクを入力してください。{'\n'}
+                進行中の対局はリアルタイムで閲覧でき、終了した対局は履歴に保存できます
               </Text>
               <TextInput
                 style={styles.importCodeInput}
                 value={importCode}
                 onChangeText={setImportCode}
-                placeholder="共有リンク・コード、またはセッションコード"
+                placeholder="セッションコード（例: ABC234）または共有リンク"
                 multiline
                 autoFocus
               />
