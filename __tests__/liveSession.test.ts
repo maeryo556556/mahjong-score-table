@@ -19,8 +19,10 @@ import {
   parseSessionDoc,
   isSessionExpired,
   createLiveSessionService,
+  buildJoinedSession,
+  selectRejoinableSessions,
 } from '../liveSession';
-import type { SessionBackend, SessionDoc, JoinEvent } from '../liveSession';
+import type { SessionBackend, SessionDoc, JoinEvent, JoinedSession, LiveSessionSnapshot } from '../liveSession';
 import { shareDataToRecords } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
@@ -494,5 +496,90 @@ describe('createLiveSessionService', () => {
     unsubscribe();
     await flush();
     expect(backend.subscribe).not.toHaveBeenCalled();
+  });
+});
+
+// ---------- 参加したセッションの記録（Issue #58） ----------
+
+describe('buildJoinedSession', () => {
+  it('スナップショットから一覧表示用の参加記録を作る', () => {
+    const snapshot: LiveSessionSnapshot = {
+      status: 'live',
+      game: {
+        ...game,
+        s: [
+          ...game.s,
+          [2, 0, -5, NOW + 1, '11月24日10:30'],
+          [2, 1, 5, NOW + 1, '11月24日10:30'],
+          [2, 2, 0, NOW + 1, '11月24日10:30'],
+          [2, 3, 0, NOW + 1, '11月24日10:30'],
+        ],
+      },
+      updatedAt: NOW,
+      expiresAt: NOW + SESSION_TTL_MS,
+    };
+    expect(buildJoinedSession('123456', snapshot, NOW + 10)).toEqual({
+      code: '123456',
+      expiresAt: NOW + SESSION_TTL_MS,
+      status: 'live',
+      startDate: '2026/11/24',
+      playerCount: 4,
+      playerNames: ['太郎', '花子', '次郎', '美咲'],
+      hanchanCount: 2,
+      lastSeenAt: NOW + 10,
+    });
+  });
+
+  it('記録がない対局は0半荘', () => {
+    const snapshot: LiveSessionSnapshot = {
+      status: 'ended',
+      game: { ...game, s: [] },
+      updatedAt: NOW,
+      expiresAt: NOW + 1000,
+    };
+    const joined = buildJoinedSession('654321', snapshot, NOW);
+    expect(joined.hanchanCount).toBe(0);
+    expect(joined.status).toBe('ended');
+  });
+
+  it('プレイヤー名の配列は複製する（スナップショットの変更に影響されない）', () => {
+    const snapshot: LiveSessionSnapshot = { status: 'live', game: { ...game, p: [...game.p] }, updatedAt: NOW, expiresAt: NOW + 1000 };
+    const joined = buildJoinedSession('111111', snapshot, NOW);
+    snapshot.game.p[0] = '変更';
+    expect(joined.playerNames[0]).toBe('太郎');
+  });
+});
+
+describe('selectRejoinableSessions', () => {
+  const make = (code: string, expiresAt: number, lastSeenAt: number): JoinedSession => ({
+    code,
+    expiresAt,
+    status: 'live',
+    startDate: '2026/11/24',
+    playerCount: 4,
+    playerNames: ['A', 'B', 'C', 'D'],
+    hanchanCount: 1,
+    lastSeenAt,
+  });
+
+  it('有効期限内のものを新しい順に返す', () => {
+    const sessions = [make('111111', NOW + 1000, NOW - 300), make('222222', NOW + 1000, NOW - 100)];
+    expect(selectRejoinableSessions(sessions, new Set(), NOW).map(s => s.code)).toEqual(['222222', '111111']);
+  });
+
+  it('期限切れ（ちょうど期限の時刻を含む）は除く', () => {
+    const sessions = [make('111111', NOW, NOW - 300), make('222222', NOW - 1, NOW - 100), make('333333', NOW + 1, NOW)];
+    expect(selectRejoinableSessions(sessions, new Set(), NOW).map(s => s.code)).toEqual(['333333']);
+  });
+
+  it('履歴に保存済みのセッションは除く', () => {
+    const sessions = [make('111111', NOW + 1000, NOW), make('222222', NOW + 1000, NOW)];
+    expect(selectRejoinableSessions(sessions, new Set(['111111']), NOW).map(s => s.code)).toEqual(['222222']);
+  });
+
+  it('元の配列は変更しない', () => {
+    const sessions = [make('111111', NOW + 1000, NOW - 300), make('222222', NOW + 1000, NOW - 100)];
+    selectRejoinableSessions(sessions, new Set(), NOW);
+    expect(sessions.map(s => s.code)).toEqual(['111111', '222222']);
   });
 });

@@ -12,6 +12,11 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   ActivityIndicator,
+  TextInput,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,10 +37,13 @@ import {
   importShareData,
   getLiveSession,
   setLiveSession,
+  renamePlayers,
+  saveJoinedSession,
+  deleteJoinedSession,
 } from '../database';
-import { shareDataToRecords } from '../utils';
+import { shareDataToRecords, validatePlayerNamesChange, hasPlayerNamesChanged, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import type { ShareGameData } from '../utils';
-import { buildSessionUrl } from '../liveSession';
+import { buildSessionUrl, buildJoinedSession } from '../liveSession';
 import type { LiveSessionStatus } from '../liveSession';
 import { getLiveSessionService } from '../firebase';
 import DrumRollInput from '../components/DrumRollInput';
@@ -97,6 +105,10 @@ export default function GameScreen({
   const [liveError, setLiveError] = useState<string | null>(null);
   const [savedLiveGameId, setSavedLiveGameId] = useState<number | null>(null);
 
+  // ホスト: ゲーム途中のプレイヤー名変更（Issue #58）
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<string[]>([]);
+
   useEffect(() => {
     if (isLiveViewer) return;
     loadGameData();
@@ -130,7 +142,22 @@ export default function GameScreen({
         setGameStartDate(records.startDate);
         setScoreHistory(records.scores);
         setChipHistory(records.chips);
+        // 参加したセッションを端末に記録し、戻った後も過去のゲーム一覧から再入室できるようにする（Issue #58）
+        try {
+          if (snapshot.status === 'expired') {
+            deleteJoinedSession(liveSessionCode);
+          } else {
+            saveJoinedSession(buildJoinedSession(liveSessionCode, snapshot, Date.now()));
+          }
+        } catch {
+          // 記録に失敗しても閲覧は続ける
+        }
       } else if (event.type === 'notFound') {
+        try {
+          deleteJoinedSession(liveSessionCode);
+        } catch {
+          // 無視
+        }
         if (receivedData) {
           setLiveStatus('ended');
         } else {
@@ -211,6 +238,14 @@ export default function GameScreen({
           : null;
       const newGameId = importShareData(liveGame, activeSession);
       setSavedLiveGameId(newGameId);
+      // 履歴に保存した対局は一覧の保存済み項目から開けるので、参加記録は消しておく
+      if (liveSessionCode) {
+        try {
+          deleteJoinedSession(liveSessionCode);
+        } catch {
+          // 無視
+        }
+      }
       Alert.alert('完了', '対局を履歴に保存しました', [
         { text: '閲覧する', onPress: () => onSavedLiveGame?.(newGameId) },
         { text: 'OK' },
@@ -367,6 +402,34 @@ export default function GameScreen({
     );
   };
 
+  const openRenameModal = () => {
+    setRenameDraft([...players]);
+    setShowRenameModal(true);
+  };
+
+  const handleConfirmRename = () => {
+    const error = validatePlayerNamesChange(players, renameDraft);
+    if (error) {
+      Alert.alert('入力エラー', error);
+      return;
+    }
+    const newNames = renameDraft.map(n => n.trim());
+    if (!hasPlayerNamesChanged(players, newNames)) {
+      setShowRenameModal(false);
+      return;
+    }
+    try {
+      renamePlayers(gameId, newNames);
+    } catch (e: unknown) {
+      Alert.alert('エラー', e instanceof Error ? e.message : '名前の変更に失敗しました');
+      return;
+    }
+    setPlayers(getPlayerNames(gameId));
+    refreshHistory();
+    pushLiveUpdate();
+    setShowRenameModal(false);
+  };
+
   const handleSuspendGame = () => {
     Alert.alert(
       '確認',
@@ -458,10 +521,10 @@ export default function GameScreen({
     onFinish();
   };
 
-  // 共有モード（Issue #53）: ゲストの閲覧中、またはホストで共有が有効な間は背景を黄色基調にする
-  const isLiveMode = isLiveViewer
-    ? liveStatus === 'live' || liveStatus === 'connecting'
-    : !readOnly && !!hostSession;
+  // 閲覧モード（Issue #53, #58）: ゲストの閲覧中だけ背景を黄色基調にする。ホストの共有中は通常の配色
+  const isLiveMode = isLiveViewer && (liveStatus === 'live' || liveStatus === 'connecting');
+  // ゲスト: 最初のデータを受け取るまでは総合スコア・記録履歴も表示しない（Issue #58）
+  const isLiveConnecting = isLiveViewer && !liveGame;
   const gradientColors: [string, string] = isLiveMode ? ['#f9a825', '#fdd835'] : ['#1e3c72', '#2a5298'];
 
   return (
@@ -483,7 +546,7 @@ export default function GameScreen({
                 <Text style={[styles.headerTitle, isLiveMode && styles.liveModeText]}>{gameStartDate}</Text>
                 <View style={[styles.liveBadge, liveStatus !== 'live' && styles.liveBadgeInactive]}>
                   <Text style={styles.liveBadgeText}>
-                    {liveStatus === 'live' ? '● LIVE' : liveStatus === 'connecting' ? '接続中' : '終了'}
+                    {liveStatus === 'live' ? '閲覧モード' : liveStatus === 'connecting' ? '接続中' : '終了'}
                   </Text>
                 </View>
               </>
@@ -499,11 +562,11 @@ export default function GameScreen({
               </>
             ) : (
               <>
-                <Text style={[styles.headerTitle, isLiveMode && styles.liveModeText]}>第{currentHanchan}半荘</Text>
+                <Text style={styles.headerTitle}>第{currentHanchan}半荘</Text>
                 <View style={styles.headerButtons}>
                   {onSuspend && (
-                    <TouchableOpacity style={[styles.suspendButton, isLiveMode && styles.suspendButtonLive]} onPress={handleSuspendGame}>
-                      <Text style={[styles.suspendButtonText, isLiveMode && styles.liveModeText]}>中断</Text>
+                    <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
+                      <Text style={styles.suspendButtonText}>中断</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.finishButton} onPress={handleFinishGame}>
@@ -516,7 +579,10 @@ export default function GameScreen({
 
           {isLiveViewer && (
             <View style={[styles.liveBanner, isLiveMode && styles.liveBannerLive]}>
-              <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>📡 リアルタイム共有 {liveSessionCode}</Text>
+              {/* 閲覧モードでは共有コードは表示しない（Issue #58） */}
+              <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>
+                {isLiveMode ? '📡 閲覧中' : '📡 閲覧モード'}
+              </Text>
               {liveStatus === 'connecting' ? (
                 <View style={[styles.loadingRow, styles.liveBannerLoadingRow]}>
                   <ActivityIndicator
@@ -532,7 +598,7 @@ export default function GameScreen({
               ) : (
                 <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
                   {liveStatus === 'live'
-                    ? 'ホストの入力が自動で反映されます（閲覧のみ）'
+                    ? 'ホストの入力が自動で反映されます（編集不可）'
                     : liveStatus === 'ended'
                       ? 'ホストが共有を終了しました'
                       : 'セッションの有効期限が切れました'}
@@ -555,17 +621,17 @@ export default function GameScreen({
 
           {!readOnly && hostSession && (
             <TouchableOpacity
-              style={[styles.liveBanner, styles.liveBannerLive]}
+              style={styles.liveBanner}
               onPress={() => setShowLiveModal(true)}
             >
-              <Text style={[styles.liveBannerTitle, styles.liveModeText]}>
+              <Text style={styles.liveBannerTitle}>
                 📡 リアルタイム共有中  コード: {hostSession.code}
               </Text>
-              <Text style={[styles.liveBannerText, styles.liveModeSubText]}>
+              <Text style={styles.liveBannerText}>
                 入力は自動で共有されます。タップでコードを表示
               </Text>
               {liveSyncError && (
-                <Text style={[styles.liveBannerError, styles.liveBannerErrorLive]}>
+                <Text style={styles.liveBannerError}>
                   同期に失敗しました。通信が戻ると次の記録時に再送されます
                 </Text>
               )}
@@ -668,6 +734,11 @@ export default function GameScreen({
                   </TouchableOpacity>
               </View>
               </View>
+
+              {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58） */}
+              <TouchableOpacity style={styles.renameButton} onPress={openRenameModal} accessibilityRole="button">
+                <Text style={styles.renameButtonText}>✏️ プレイヤー名を変更</Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -679,25 +750,29 @@ export default function GameScreen({
             </View>
           )}
 
-          {/* 総合スコア */}
-          <SummaryCards
-            players={players}
-            scoreHistory={scoreHistory}
-            chipHistory={chipHistory}
-            playerCount={playerCount}
-          />
+          {!isLiveConnecting && (
+            <>
+              {/* 総合スコア */}
+              <SummaryCards
+                players={players}
+                scoreHistory={scoreHistory}
+                chipHistory={chipHistory}
+                playerCount={playerCount}
+              />
 
-          {/* 記録履歴 */}
-          <HistoryTable
-            players={players}
-            scoreHistory={scoreHistory}
-            chipHistory={chipHistory}
-            gameStartDate={gameStartDate}
-            {...(!readOnly && {
-              onDeleteScore: handleDeleteScore,
-              onDeleteChip: handleDeleteChip,
-            })}
-          />
+              {/* 記録履歴 */}
+              <HistoryTable
+                players={players}
+                scoreHistory={scoreHistory}
+                chipHistory={chipHistory}
+                gameStartDate={gameStartDate}
+                {...(!readOnly && {
+                  onDeleteScore: handleDeleteScore,
+                  onDeleteChip: handleDeleteChip,
+                })}
+              />
+            </>
+          )}
         </ScrollView>
 
         {!readOnly && (
@@ -710,6 +785,49 @@ export default function GameScreen({
             onConfirm={confirmFinishGame}
             onCancel={() => setShowFinishModal(false)}
           />
+        )}
+        {!readOnly && (
+          <Modal visible={showRenameModal} transparent animationType="fade">
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <KeyboardAvoidingView
+                style={styles.modalOverlay}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              >
+                <View style={styles.shareModalContent}>
+                  <Text style={styles.shareModalTitle}>プレイヤー名を変更</Text>
+                  <Text style={styles.shareModalDescription}>
+                    記録済みのスコア・チップの名前もあわせて変更されます。{'\n'}
+                    ※ {MAX_PLAYER_NAME_LENGTH}文字以内で入力してください
+                  </Text>
+                  {renameDraft.map((name, index) => (
+                    <View key={index} style={styles.renameInputRow}>
+                      <Text style={styles.renameInputLabel}>プレイヤー{index + 1}</Text>
+                      <TextInput
+                        style={styles.renameInput}
+                        value={name}
+                        onChangeText={(text) => {
+                          setRenameDraft(prev => prev.map((n, i) => (i === index ? text : n)));
+                        }}
+                        placeholder={players[index]}
+                        accessibilityLabel={`プレイヤー${index + 1}の名前`}
+                      />
+                    </View>
+                  ))}
+                  <View style={[styles.shareModalButtons, styles.renameModalButtons]}>
+                    <TouchableOpacity style={[styles.shareModalButton, styles.shareModalShareButton]} onPress={handleConfirmRename}>
+                      <Text style={styles.shareModalButtonText}>変更する</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.shareModalButton, styles.shareModalCloseButton]}
+                      onPress={() => setShowRenameModal(false)}
+                    >
+                      <Text style={styles.shareModalCloseText}>キャンセル</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </KeyboardAvoidingView>
+            </TouchableWithoutFeedback>
+          </Modal>
         )}
         {!readOnly && (
           <Modal visible={showLiveModal && !!hostSession} transparent animationType="fade">
@@ -982,6 +1100,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  // ---- プレイヤー名の変更 ----
+  renameButton: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  renameButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  renameInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  renameInputLabel: {
+    width: 84,
+    fontSize: 13,
+    color: '#555',
+  },
+  renameInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#212529',
+  },
+  renameModalButtons: {
+    marginTop: 8,
+  },
   shareModalCloseButton: {
     backgroundColor: '#f0f0f0',
   },
@@ -1066,10 +1222,6 @@ const styles = StyleSheet.create({
   },
   backButtonLive: {
     backgroundColor: 'rgba(62,39,35,0.12)',
-  },
-  suspendButtonLive: {
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    borderColor: 'rgba(62,39,35,0.3)',
   },
   liveBannerLive: {
     backgroundColor: 'rgba(255,255,255,0.6)',

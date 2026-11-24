@@ -187,3 +187,35 @@ export const shareDataToRecords = (data: ShareGameData, now: number = Date.now()
 
   return { playerCount: data.pc, startDate: data.d, players: data.p, scores, chips };
 };
+
+// ---------- プレイヤー名の変更（Issue #58） ----------
+
+export const MAX_PLAYER_NAME_LENGTH = 4;
+
+/**
+ * ゲーム途中のプレイヤー名変更の入力を検証する。問題なければ null、あればエラーメッセージを返す。
+ * 記録はプレイヤー名で紐づけているため、空欄・4文字超・重複は不可とする。
+ */
+export const validatePlayerNamesChange = (
+  currentNames: readonly string[],
+  newNames: readonly string[]
+): string | null => {
+  if (newNames.length !== currentNames.length) {
+    return 'プレイヤー数が一致しません';
+  }
+  const trimmed = newNames.map(n => n.trim());
+  if (trimmed.some(n => !n)) {
+    return 'すべてのプレイヤーの名前を入力してください';
+  }
+  if (trimmed.some(n => n.length > MAX_PLAYER_NAME_LENGTH)) {
+    return `プレイヤー名は${MAX_PLAYER_NAME_LENGTH}文字以内で入力してください`;
+  }
+  if (new Set(trimmed).size !== trimmed.length) {
+    return '同じ名前のプレイヤーがいます。別の名前にしてください';
+  }
+  return null;
+};
+
+/** 変更前後で名前が1つでも変わっているか */
+export const hasPlayerNamesChanged = (currentNames: readonly string[], newNames: readonly string[]): boolean =>
+  currentNames.length !== newNames.length || currentNames.some((name, i) => name !== newNames[i].trim());

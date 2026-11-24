@@ -9,15 +9,24 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getFinishedGames, getUnfinishedGames, deleteGame } from '../database';
-import { isLocalSessionActive } from '../liveSession';
+import {
+  getFinishedGames,
+  getUnfinishedGames,
+  deleteGame,
+  getJoinedSessions,
+  deleteJoinedSession,
+  purgeExpiredJoinedSessions,
+  getSavedLiveSessionCodes,
+} from '../database';
+import { isLocalSessionActive, selectRejoinableSessions } from '../liveSession';
+import type { JoinedSession } from '../liveSession';
 
 interface PastGamesScreenProps {
   onSelectGame: (gameId: number) => void;
   onBack: () => void;
   /** ホストとしてライブ共有中の（未終了の）ゲームを開く */
   onResumeLiveGame: (gameId: number) => void;
-  /** 取り込んだゲームの受信元セッションがまだ有効な場合、ライブ閲覧に入る */
+  /** 取り込んだゲームの受信元セッション、またはゲストとして参加したセッションがまだ有効な場合、ライブ閲覧に入る */
   onJoinLiveSession: (code: string) => void;
 }
 
@@ -26,16 +35,24 @@ type ListGame = ReturnType<typeof getUnfinishedGames>[number] & { imported?: num
 const isActive = (game: ListGame, now: number) =>
   isLocalSessionActive(game.live_session_code, game.live_session_expires_at, now);
 
-// ライブ共有中のゲーム（ホストとして共有中の進行中ゲーム）を先頭に、続けて終了済みゲームを並べる
+// ライブ共有中のゲーム（ホストとして共有中の進行中ゲーム）と、ゲストとして参加した閲覧中の対局を先頭に、
+// 続けて終了済みゲームを並べる
 const loadGames = () => {
   const now = Date.now();
   const liveHostGames: ListGame[] = getUnfinishedGames().filter(g => isActive(g, now));
   const finishedGames: ListGame[] = getFinishedGames();
-  return { liveHostGames, finishedGames };
+  let joinedSessions: JoinedSession[] = [];
+  try {
+    purgeExpiredJoinedSessions(now);
+    joinedSessions = selectRejoinableSessions(getJoinedSessions(), getSavedLiveSessionCodes(), now);
+  } catch {
+    // 参加記録が読めなくても一覧は表示する
+  }
+  return { liveHostGames, finishedGames, joinedSessions };
 };
 
 export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame, onJoinLiveSession }: PastGamesScreenProps) {
-  const [{ liveHostGames, finishedGames }, setGames] = useState(loadGames);
+  const [{ liveHostGames, finishedGames, joinedSessions }, setGames] = useState(loadGames);
   const games = [...liveHostGames, ...finishedGames];
   const liveHostIds = new Set(liveHostGames.map(g => g.id));
 
@@ -55,6 +72,25 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
       return;
     }
     onSelectGame(game.id);
+  };
+
+  // 閲覧した対局を一覧から外す（セッション自体には影響しない）
+  const handleRemoveJoinedSession = (session: JoinedSession) => {
+    Alert.alert(
+      '一覧から削除',
+      `${session.startDate} の閲覧中の対局を一覧から削除しますか？\n再度見るにはセッションコードの入力が必要です。`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: () => {
+            deleteJoinedSession(session.code);
+            refreshGames();
+          },
+        },
+      ]
+    );
   };
 
   const handleDeleteGame = (gameId: number, startDate: string) => {
@@ -87,7 +123,42 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {games.length === 0 ? (
+          {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58） */}
+          {joinedSessions.map(session => (
+            <TouchableOpacity
+              key={`joined-${session.code}`}
+              style={[styles.gameCard, styles.gameCardLive]}
+              onPress={() => onJoinLiveSession(session.code)}
+              onLongPress={() => handleRemoveJoinedSession(session)}
+              delayLongPress={800}
+              accessibilityRole="button"
+              accessibilityLabel={`${session.startDate} の対局を閲覧モードで開く`}
+            >
+              <View style={styles.gameCardHeader}>
+                <View style={styles.gameDateRow}>
+                  <Text style={styles.gameDate}>{session.startDate}</Text>
+                  <View style={styles.liveBadge}>
+                    <Text style={styles.liveBadgeText}>
+                      {session.status === 'live' ? '● 閲覧モード' : '閲覧モード（共有終了）'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.gameType}>
+                  {session.playerCount === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
+                </Text>
+              </View>
+              <View style={styles.gameCardBody}>
+                <Text style={styles.playerList}>
+                  {session.playerNames.join(' / ')}
+                </Text>
+                <Text style={styles.hanchanInfo}>
+                  {session.hanchanCount}半荘
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          {games.length === 0 && joinedSessions.length === 0 ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>保存されたゲームはありません</Text>
             </View>

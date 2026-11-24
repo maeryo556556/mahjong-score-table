@@ -265,3 +265,48 @@ export const createLiveSessionService = (
     },
   };
 };
+
+// ---------- 参加したセッションの記録（Issue #58: 閲覧モードへの再入室） ----------
+
+/** ゲストとして参加したセッション。端末に保持し、過去のゲーム一覧から再接続できるようにする */
+export interface JoinedSession {
+  code: string;
+  expiresAt: number;
+  status: LiveSessionStatus;
+  startDate: string;
+  playerCount: number;
+  playerNames: string[];
+  hanchanCount: number;
+  /** 最後にデータを受信した時刻（一覧の並び順に使う） */
+  lastSeenAt: number;
+}
+
+export const buildJoinedSession = (code: string, snapshot: LiveSessionSnapshot, now: number): JoinedSession => {
+  const hanchans = new Set<number>();
+  (snapshot.game.s || []).forEach(entry => hanchans.add(entry[0]));
+  return {
+    code,
+    expiresAt: snapshot.expiresAt,
+    status: snapshot.status,
+    startDate: snapshot.game.d,
+    playerCount: snapshot.game.pc,
+    playerNames: [...snapshot.game.p],
+    hanchanCount: hanchans.size,
+    lastSeenAt: now,
+  };
+};
+
+/**
+ * 一覧に表示する再入室可能なセッションを選ぶ。
+ * - 有効期限内のものだけ（期限切れのセッションには再接続しても閲覧できない）
+ * - すでに履歴に保存したセッション（取り込み済みゲームの受信元コード）は、そちらの項目から入れるので除く
+ * - 最後に受信した順（新しい順）に並べる
+ */
+export const selectRejoinableSessions = (
+  sessions: readonly JoinedSession[],
+  savedSessionCodes: ReadonlySet<string>,
+  now: number
+): JoinedSession[] =>
+  sessions
+    .filter(s => isLocalSessionActive(s.code, s.expiresAt, now) && !savedSessionCodes.has(s.code))
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);

@@ -7,6 +7,8 @@ import {
   formatDate,
   formatTime,
   buildDefaultPlayerNames,
+  validatePlayerNamesChange,
+  hasPlayerNamesChanged,
 } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
@@ -209,5 +211,56 @@ describe('buildDefaultPlayerNames', () => {
     const result = buildDefaultPlayerNames(last);
     result[0] = 'X';
     expect(last).toEqual(['A', 'B', 'C']);
+  });
+});
+
+describe('validatePlayerNamesChange（Issue #58: ゲーム途中の名前変更）', () => {
+  const current = ['太郎', '花子', '次郎', '美咲'];
+
+  it('正しい入力なら null', () => {
+    expect(validatePlayerNamesChange(current, ['たろう', '花子', '次郎', '美咲'])).toBeNull();
+  });
+
+  it('前後の空白は無視して検証する', () => {
+    expect(validatePlayerNamesChange(current, [' たろう ', '花子', '次郎', '美咲'])).toBeNull();
+  });
+
+  it('名前の入れ替えは許可する', () => {
+    expect(validatePlayerNamesChange(current, ['花子', '太郎', '次郎', '美咲'])).toBeNull();
+  });
+
+  it('空欄はエラー', () => {
+    expect(validatePlayerNamesChange(current, ['太郎', '  ', '次郎', '美咲'])).toBe('すべてのプレイヤーの名前を入力してください');
+  });
+
+  it('5文字以上はエラー', () => {
+    expect(validatePlayerNamesChange(current, ['たろうくん', '花子', '次郎', '美咲'])).toBe('プレイヤー名は4文字以内で入力してください');
+  });
+
+  it('重複はエラー（記録は名前で紐づくため）', () => {
+    expect(validatePlayerNamesChange(current, ['太郎', '太郎', '次郎', '美咲'])).toBe('同じ名前のプレイヤーがいます。別の名前にしてください');
+    expect(validatePlayerNamesChange(current, ['太郎', '太郎 ', '次郎', '美咲'])).not.toBeNull();
+  });
+
+  it('人数が変わる入力はエラー', () => {
+    expect(validatePlayerNamesChange(current, ['太郎', '花子', '次郎'])).toBe('プレイヤー数が一致しません');
+  });
+
+  it('3人麻雀でも検証できる', () => {
+    expect(validatePlayerNamesChange(['A', 'B', 'C'], ['A', 'B', 'D'])).toBeNull();
+  });
+});
+
+describe('hasPlayerNamesChanged', () => {
+  it('同じ名前（空白付き含む）なら false', () => {
+    expect(hasPlayerNamesChanged(['A', 'B', 'C'], ['A', ' B ', 'C'])).toBe(false);
+  });
+
+  it('1人でも変わっていれば true', () => {
+    expect(hasPlayerNamesChanged(['A', 'B', 'C'], ['A', 'B', 'D'])).toBe(true);
+  });
+
+  it('入れ替えも変更とみなす', () => {
+    expect(hasPlayerNamesChanged(['A', 'B', 'C'], ['B', 'A', 'C'])).toBe(true);
   });
 });
