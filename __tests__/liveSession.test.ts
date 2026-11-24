@@ -180,7 +180,7 @@ describe('isLocalSessionActive', () => {
 });
 
 describe('buildSessionDoc / buildSessionUpdate', () => {
-  it('共有データJSON・ホスト・作成日時・24時間後の有効期限を持つ', () => {
+  it('共有データJSON・ホスト・作成日時・48時間後の有効期限を持つ', () => {
     const doc = buildSessionDoc(game, 'uid-1', NOW);
     expect(doc).toEqual({
       data: JSON.stringify(game),
@@ -190,11 +190,11 @@ describe('buildSessionDoc / buildSessionUpdate', () => {
       expiresAt: NOW + SESSION_TTL_MS,
       ended: false,
     });
-    expect(SESSION_TTL_MS).toBe(24 * 60 * 60 * 1000);
+    expect(SESSION_TTL_MS).toBe(48 * 60 * 60 * 1000);
     expect(JSON.parse(doc.data)).toEqual(game);
   });
 
-  it('ended を指定すると終了済みセッションのドキュメントになる（有効期限は同じく24時間）', () => {
+  it('ended を指定すると終了済みセッションのドキュメントになる（有効期限は同じく48時間）', () => {
     const doc = buildSessionDoc(game, 'uid-1', NOW, true);
     expect(doc.ended).toBe(true);
     expect(doc.expiresAt).toBe(NOW + SESSION_TTL_MS);
@@ -339,7 +339,7 @@ describe('createLiveSessionService', () => {
     expect(backend.create).not.toHaveBeenCalled();
   });
 
-  it('publishFinished: 最初から終了状態のセッションを24時間有効で作成する', async () => {
+  it('publishFinished: 最初から終了状態のセッションを48時間有効で作成する', async () => {
     const { backend, docs } = createMockBackend('host-1');
     const service = createLiveSessionService(backend, { now: () => NOW, random: () => 0 });
 
@@ -384,7 +384,7 @@ describe('createLiveSessionService', () => {
     expect(backend.create).not.toHaveBeenCalled();
   });
 
-  it('publishFinished: 参加者には終了状態で表示され、発行から24時間後は期限切れになる', async () => {
+  it('publishFinished: 参加者には終了状態で表示され、発行から48時間後は期限切れになる', async () => {
     const { backend } = createMockBackend();
     let now = NOW;
     const service = createLiveSessionService(backend, { now: () => now, random: () => 0 });
@@ -397,7 +397,7 @@ describe('createLiveSessionService', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'ended', game } });
 
-    // 24時間経過後に参加した場合
+    // 48時間経過後に参加した場合
     now = NOW + SESSION_TTL_MS;
     const lateEvents: JoinEvent[] = [];
     service.join(code, e => lateEvents.push(e));

@@ -14,7 +14,7 @@ export const SESSIONS_COLLECTION = 'sessions';
 // 入力しやすさを優先し数字のみとする（Issue #48）
 export const SESSION_CODE_ALPHABET = '0123456789';
 export const SESSION_CODE_LENGTH = 6;
-export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const SESSION_TTL_MS = 48 * 60 * 60 * 1000; // 48時間（Issue #60）
 export const LIVE_DEEP_LINK_HOST = 'live';
 
 const SESSION_CODE_PATTERN = new RegExp(`^[${SESSION_CODE_ALPHABET}]{${SESSION_CODE_LENGTH}}$`);
@@ -145,7 +145,7 @@ export const parseSessionDoc = (raw: unknown, now: number): LiveSessionSnapshot 
     return null;
   }
   if (!validateShareData(game)) return null;
-  // 有効期限切れを優先する（終了済みゲームの共有も、発行から24時間後は期限切れとして扱う）
+  // 有効期限切れを優先する（終了済みゲームの共有も、発行から48時間後は期限切れとして扱う）
   const status: LiveSessionStatus = isSessionExpired({ expiresAt: d.expiresAt }, now)
     ? 'expired'
     : d.ended === true ? 'ended' : 'live';
@@ -183,7 +183,7 @@ export interface LiveSessionService {
   start(game: ShareGameData): Promise<{ code: string; expiresAt: number }>;
   /**
    * 終了済みゲームを最初から終了状態（ended: true）のセッションとして発行する。
-   * 有効期限は発行時刻から24時間。呼ぶたびに新しいコードを発行する。
+   * 有効期限は発行時刻から48時間。呼ぶたびに新しいコードを発行する。
    */
   publishFinished(game: ShareGameData): Promise<{ code: string; expiresAt: number }>;
   /** ホストのゲーム更新をセッションへ反映する */

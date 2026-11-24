@@ -4,6 +4,10 @@ import {
   shareDataToRecords,
   formatDate,
   formatTime,
+  selectGamesToPrune,
+  selectFavoritesToRelease,
+  MAX_SAVED_GAMES,
+  MAX_FAVORITE_GAMES,
 } from './utils';
 import type { ShareGameData, ShareGameDataV2 } from './utils';
 import type { JoinedSession, LiveSessionStatus } from './liveSession';
@@ -102,6 +106,17 @@ export const initDatabase = () => {
   } catch {
     // カラムが既に存在する場合は無視
   }
+  // お気に入り（Issue #60）
+  try {
+    getDb().runSync('ALTER TABLE games ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
+  try {
+    getDb().runSync('ALTER TABLE games ADD COLUMN favorited_at INTEGER');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
 };
 
 // ゲーム作成
@@ -179,6 +194,53 @@ export const getCurrentGame = () => {
 // ゲーム終了
 export const finishGame = (gameId: number) => {
   getDb().runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
+  // 保存上限（お気に入り以外100件）を超えたら古いものから削除する（Issue #60）
+  // 削除に失敗しても保存自体は成功させる
+  try {
+    pruneOldGames([gameId]);
+  } catch {
+    // 次回の保存時に再度削除を試みる
+  }
+};
+
+// ---- 過去のゲームの保存上限とお気に入り（Issue #60） ----
+// 通常（お気に入り以外）は最大100件、お気に入りは最大20件で通常枠に数えない。
+// 削除は保存時（ゲーム終了・共有ゲームの取り込み）にのみ行い、保存したばかりのゲームは削除しない。
+// そのためお気に入りの件数に関わらず、新規ゲームの保存は常に成功する。
+
+// 保存上限を超えた古い終了済みゲーム（お気に入り以外）を削除する。削除した件数を返す
+// protectIds: 保存したばかりのゲームなど、削除してはいけないゲーム
+export const pruneOldGames = (protectIds: number[] = [], limit: number = MAX_SAVED_GAMES): number => {
+  const games = getDb().getAllSync<{ id: number; created_at: number; favorite: number }>(
+    'SELECT id, created_at, favorite FROM games WHERE finished = 1'
+  );
+  const ids = selectGamesToPrune(games, limit, protectIds);
+  ids.forEach(id => deleteGame(id));
+  return ids.length;
+};
+
+/**
+ * お気に入りの登録・解除。
+ * 登録で上限（20件）を超える場合は、登録日時の古いお気に入りから自動で解除する（データは通常データとして残す）。
+ * 自動で解除したゲームのIDを返す。お気に入りの登録・解除ではゲームを削除しない。
+ */
+export const setGameFavorite = (gameId: number, favorite: boolean, limit: number = MAX_FAVORITE_GAMES): number[] => {
+  if (!favorite) {
+    getDb().runSync('UPDATE games SET favorite = 0, favorited_at = NULL WHERE id = ?', [gameId]);
+    return [];
+  }
+  let released: number[] = [];
+  getDb().withTransactionSync(() => {
+    const favorites = getDb().getAllSync<{ id: number; favorited_at: number | null }>(
+      'SELECT id, favorited_at FROM games WHERE favorite = 1'
+    );
+    released = selectFavoritesToRelease(favorites, gameId, limit);
+    released.forEach(id => {
+      getDb().runSync('UPDATE games SET favorite = 0, favorited_at = NULL WHERE id = ?', [id]);
+    });
+    getDb().runSync('UPDATE games SET favorite = 1, favorited_at = ? WHERE id = ?', [Date.now(), gameId]);
+  });
+  return released;
 };
 
 // ゲームをIDで取得
@@ -198,10 +260,11 @@ export const getFinishedGames = () => {
     start_date: string;
     created_at: number;
     imported: number;
+    favorite: number;
     live_session_code: string | null;
     live_session_expires_at: number | null;
   }>(
-    'SELECT id, player_count, start_date, created_at, imported, live_session_code, live_session_expires_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
+    'SELECT id, player_count, start_date, created_at, imported, favorite, live_session_code, live_session_expires_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
   );
   return games.map(game => {
     const players = getDb().getAllSync<{ player_name: string }>(
@@ -417,6 +480,14 @@ export const importShareData = (
     });
   });
 
+  // 保存上限（お気に入り以外100件）を超えたら古いものから削除する（Issue #60）
+  // 削除に失敗しても保存自体は成功させる
+  try {
+    pruneOldGames([gameId]);
+  } catch {
+    // 次回の保存時に再度削除を試みる
+  }
+
   return gameId;
 };
 
@@ -446,7 +517,7 @@ export const renamePlayers = (gameId: number, newNames: string[]) => {
   if (currentNames.length !== newNames.length) {
     throw new Error('プレイヤー数が一致しません');
   }
-  const tempName = (i: number) => `__rename__${gameId}_${i}__`; // 4文字以内の実名とは衝突しない
+  const tempName = (i: number) => `__rename__${gameId}_${i}__`; // 上限文字数以内の実名とは衝突しない
   getDb().withTransactionSync(() => {
     currentNames.forEach((oldName, i) => {
       getDb().runSync('UPDATE scores SET player_name = ? WHERE game_id = ? AND player_name = ?', [tempName(i), gameId, oldName]);

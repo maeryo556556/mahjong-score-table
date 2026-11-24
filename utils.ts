@@ -190,11 +190,11 @@ export const shareDataToRecords = (data: ShareGameData, now: number = Date.now()
 
 // ---------- プレイヤー名の変更（Issue #58） ----------
 
-export const MAX_PLAYER_NAME_LENGTH = 4;
+export const MAX_PLAYER_NAME_LENGTH = 6; // Issue #60: 4文字→6文字
 
 /**
  * ゲーム途中のプレイヤー名変更の入力を検証する。問題なければ null、あればエラーメッセージを返す。
- * 記録はプレイヤー名で紐づけているため、空欄・4文字超・重複は不可とする。
+ * 記録はプレイヤー名で紐づけているため、空欄・上限文字数超・重複は不可とする。
  */
 export const validatePlayerNamesChange = (
   currentNames: readonly string[],
@@ -219,3 +219,76 @@ export const validatePlayerNamesChange = (
 /** 変更前後で名前が1つでも変わっているか */
 export const hasPlayerNamesChanged = (currentNames: readonly string[], newNames: readonly string[]): boolean =>
   currentNames.length !== newNames.length || currentNames.some((name, i) => name !== newNames[i].trim());
+
+// ---------- 過去のゲームの保存上限とお気に入り（Issue #60） ----------
+
+// Issue #60 本文の「50件」は、Issue コメントの確定値（通常100件・お気に入り20件）に読み替えている
+
+/** お気に入り以外の終了済みゲームの保存上限。お気に入りは上限に数えず、自動削除もしない */
+export const MAX_SAVED_GAMES = 100;
+
+/** お気に入りの上限。超える登録をすると古いお気に入りから自動で解除する（データは通常データとして残す） */
+export const MAX_FAVORITE_GAMES = 20;
+
+export interface PrunableGame {
+  id: number;
+  created_at: number;
+  favorite: number | boolean;
+}
+
+/**
+ * 保存上限を超えたために削除すべき終了済みゲームのIDを返す（古い順に削除対象とする）。
+ * - お気に入りは対象外で、上限の件数にも数えない（新規ゲームの保存は常に行える）
+ * - protectIds に含まれるゲーム（保存したばかりのゲームなど）は削除しない
+ * 並びは created_at の降順（同時刻は id の降順）で新しいものから上限件数を残す。
+ */
+export const selectGamesToPrune = (
+  games: readonly PrunableGame[],
+  limit: number = MAX_SAVED_GAMES,
+  protectIds: readonly number[] = []
+): number[] => {
+  const protect = new Set(protectIds);
+  const candidates = games
+    .filter(g => !g.favorite)
+    .slice()
+    .sort((a, b) => (b.created_at - a.created_at) || (b.id - a.id));
+  // 保護対象は必ず残すため、上限の枠を先に確保する
+  const protectedCount = candidates.filter(g => protect.has(g.id)).length;
+  let remaining = Math.max(0, limit - protectedCount);
+  const toDelete: number[] = [];
+  for (const g of candidates) {
+    if (protect.has(g.id)) continue;
+    if (remaining > 0) {
+      remaining--;
+    } else {
+      toDelete.push(g.id);
+    }
+  }
+  return toDelete;
+};
+
+export interface FavoriteGame {
+  id: number;
+  /** お気に入りに登録した日時（Unix time ミリ秒）。不明な場合は null */
+  favorited_at: number | null;
+}
+
+/**
+ * 新たに1件お気に入り登録する前に、上限を超えないよう解除すべき既存のお気に入りのIDを返す。
+ * 登録日時が古いものから解除する（登録日時が不明なものは最も古いとみなし、同順位は id の昇順）。
+ * newId が既にお気に入りに含まれている場合は件数が増えないため、何も解除しない。
+ */
+export const selectFavoritesToRelease = (
+  favorites: readonly FavoriteGame[],
+  newId: number,
+  limit: number = MAX_FAVORITE_GAMES
+): number[] => {
+  if (favorites.some(f => f.id === newId)) return [];
+  const overflow = favorites.length + 1 - Math.max(1, limit);
+  if (overflow <= 0) return [];
+  return favorites
+    .slice()
+    .sort((a, b) => ((a.favorited_at ?? -Infinity) - (b.favorited_at ?? -Infinity)) || (a.id - b.id))
+    .slice(0, overflow)
+    .map(f => f.id);
+};
