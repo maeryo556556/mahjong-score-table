@@ -50,6 +50,7 @@ import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
 import SummaryCards from '../components/SummaryCards';
 import FinishGameModal from '../components/FinishGameModal';
+import { BroadcastIcon, CelebrateIcon, PencilIcon, SendIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 
 interface GameScreenProps {
   /** ローカルのゲームID。ライブ閲覧（liveSessionCode 指定）時は未使用 */
@@ -549,15 +550,6 @@ export default function GameScreen({
           onScroll={handleScroll}
           scrollEventThrottle={16}
         >
-          {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58）。Issue #60 で画面最上部の小さいボタンに変更 */}
-          {!readOnly && (
-            <View style={styles.topBar}>
-              <TouchableOpacity style={styles.renameButton} onPress={openRenameModal} accessibilityRole="button">
-                <Text style={styles.renameButtonText}>✏️ 名前変更</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
           {/* ヘッダー */}
           <View style={styles.header}>
             {isLiveViewer ? (
@@ -584,8 +576,21 @@ export default function GameScreen({
               </>
             ) : (
               <>
-                <Text style={styles.headerTitle}>第{currentHanchan}半荘</Text>
+                {/* 右側にボタンが3つ並ぶため、狭い画面では見出しを縮小して1行に収める（Issue #62） */}
+                <Text style={[styles.headerTitle, styles.headerTitleShrink]} numberOfLines={1} adjustsFontSizeToFit>
+                  第{currentHanchan}半荘
+                </Text>
                 <View style={styles.headerButtons}>
+                  {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58）。Issue #62 で「中断」の左隣へ移動 */}
+                  <TouchableOpacity
+                    style={styles.renameButton}
+                    onPress={openRenameModal}
+                    accessibilityRole="button"
+                    accessibilityLabel="名前変更"
+                  >
+                    <PencilIcon size={13} />
+                    <Text style={styles.renameButtonText}>名前変更</Text>
+                  </TouchableOpacity>
                   {onSuspend && (
                     <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
                       <Text style={styles.suspendButtonText}>中断</Text>
@@ -602,9 +607,12 @@ export default function GameScreen({
           {isLiveViewer && (
             <View style={[styles.liveBanner, isLiveMode && styles.liveBannerLive]}>
               {/* 閲覧モードでは共有コードは表示しない（Issue #58） */}
-              <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>
-                {isLiveMode ? '📡 閲覧中' : '📡 閲覧モード'}
-              </Text>
+              <View style={styles.iconTitleRow}>
+                <BroadcastIcon size={18} color={isLiveMode ? '#3e2723' : '#fff'} />
+                <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>
+                  {isLiveMode ? '閲覧中' : '閲覧モード'}
+                </Text>
+              </View>
               {liveStatus === 'connecting' ? (
                 <View style={[styles.loadingRow, styles.liveBannerLoadingRow]}>
                   <ActivityIndicator
@@ -648,9 +656,10 @@ export default function GameScreen({
               onPress={() => setShowFinishedShareModal(true)}
               accessibilityRole="button"
             >
-              <Text style={styles.liveBannerTitle}>
-                📤 共有中  コード: {finishedShare.code}
-              </Text>
+              <View style={styles.iconTitleRow}>
+                <SendIcon size={18} />
+                <Text style={styles.liveBannerTitle}>共有中  コード: {finishedShare.code}</Text>
+              </View>
               <Text style={styles.liveBannerText}>
                 {Date.now() < finishedShare.expiresAt
                   ? `有効期限: ${formatExpiresAt(finishedShare.expiresAt)}`
@@ -665,9 +674,10 @@ export default function GameScreen({
               style={styles.liveBanner}
               onPress={() => setShowLiveModal(true)}
             >
-              <Text style={styles.liveBannerTitle}>
-                📡 リアルタイム共有中  コード: {hostSession.code}
-              </Text>
+              <View style={styles.iconTitleRow}>
+                <BroadcastIcon size={18} />
+                <Text style={styles.liveBannerTitle}>リアルタイム共有中  コード: {hostSession.code}</Text>
+              </View>
               <Text style={styles.liveBannerText}>
                 有効期限: {formatExpiresAt(hostSession.expiresAt)}
               </Text>
@@ -691,11 +701,13 @@ export default function GameScreen({
               accessibilityRole="button"
             >
               <View style={styles.loadingRow}>
-                {liveStarting && (
+                {liveStarting ? (
                   <ActivityIndicator size="small" color="#3e2723" style={styles.loadingIndicator} testID="live-start-loading" />
+                ) : (
+                  <BroadcastIcon size={20} color="#3e2723" style={styles.loadingIndicator} />
                 )}
                 <Text style={styles.liveStartButtonText}>
-                  {liveStarting ? '共有を開始しています…' : '📡 リアルタイム共有を開始'}
+                  {liveStarting ? '共有を開始しています…' : 'リアルタイム共有を開始'}
                 </Text>
               </View>
               <Text style={styles.liveStartButtonSubText}>同じ卓のメンバーがコードでスコアを閲覧できます</Text>
@@ -707,7 +719,10 @@ export default function GameScreen({
               {/* ポイント入力 */}
               <View style={styles.card}>
                 <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>🀄 ポイント入力</Text>
+                  <View style={styles.iconTitleRow}>
+                    <TileIcon size={20} />
+                    <Text style={styles.sectionTitle}>ポイント入力</Text>
+                  </View>
                   {(() => {
                     const total = scoreValues.reduce((sum, v) => sum + v, 0);
                     return (
@@ -743,7 +758,10 @@ export default function GameScreen({
               {/* チップ移動 */}
               <View style={[styles.card, styles.chipCard]}>
                 <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>🎉 チップ移動</Text>
+                  <View style={styles.iconTitleRow}>
+                    <CelebrateIcon size={20} />
+                    <Text style={styles.sectionTitle}>チップ移動</Text>
+                  </View>
                   {(() => {
                     const total = chipValues.reduce((sum, v) => sum + v, 0);
                     return (
@@ -969,6 +987,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  headerTitleShrink: {
+    flexShrink: 1,
+    marginRight: 8,
+  },
   backButton: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -985,11 +1007,12 @@ const styles = StyleSheet.create({
   },
   headerButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   suspendButton: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
@@ -1001,7 +1024,7 @@ const styles = StyleSheet.create({
   },
   finishButton: {
     backgroundColor: '#dc3545',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
   },
@@ -1136,13 +1159,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // ---- プレイヤー名の変更 ----
-  topBar: {
+  // ---- アイコン付きの見出し（Issue #62） ----
+  iconTitleRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 8,
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
   },
+  // ---- プレイヤー名の変更 ----
   renameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 6,
     borderWidth: 1,

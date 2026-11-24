@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
+import { GoalFlagIcon, MedalIcon } from './icons/HandDrawnIcons';
 
 interface FinishGameModalProps {
   visible: boolean;
@@ -51,14 +52,9 @@ export default function FinishGameModal({
 
   const summaries = players.map(getSummary).sort((a, b) => b.total - a.total);
 
-  const getMedalEmoji = (index: number) => {
-    switch (index) {
-      case 0: return '🥇';
-      case 1: return '🥈';
-      case 2: return '🥉';
-      default: return '';
-    }
-  };
+  // 上位3人には手書き風のメダルを表示（Issue #62）
+  const renderMedal = (index: number) =>
+    index < 3 ? <MedalIcon rank={(index + 1) as 1 | 2 | 3} size={18} /> : null;
 
   const getBorderColor = (index: number) => {
     switch (index) {
@@ -88,7 +84,7 @@ export default function FinishGameModal({
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.icon}>🏁</Text>
+            <GoalFlagIcon size={40} style={styles.icon} />
             <Text style={styles.title}>ゲーム終了</Text>
           </View>
 
@@ -109,9 +105,10 @@ export default function FinishGameModal({
                   ]}
                 >
                   <View style={styles.summaryLeft}>
-                    <Text style={styles.playerName}>
-                      {getMedalEmoji(index)} {summary.player}
-                    </Text>
+                    <View style={styles.playerNameRow}>
+                      {renderMedal(index)}
+                      <Text style={styles.playerName}>{summary.player}</Text>
+                    </View>
                     <View style={styles.rankBadges}>
                       {Object.keys(summary.rankCounts).map(rank => {
                         const r = parseInt(rank);
@@ -198,7 +195,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#dee2e6',
   },
   icon: {
-    fontSize: 36,
     marginBottom: 8,
   },
   title: {
@@ -234,11 +230,17 @@ const styles = StyleSheet.create({
   summaryLeft: {
     flex: 1,
   },
+  playerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
   playerName: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 6,
+    flexShrink: 1,
   },
   rankBadges: {
     flexDirection: 'row',

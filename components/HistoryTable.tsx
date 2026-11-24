@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { CelebrateIcon } from './icons/HandDrawnIcons';
 
 interface HistoryTableProps {
   players: string[];
@@ -143,7 +144,10 @@ export default function HistoryTable({
               })}
             >
               <View style={styles.historyHeader}>
-                <Text style={[styles.hanchanText, styles.chipText]}>🎉 チップ</Text>
+                <View style={styles.chipTitleRow}>
+                  <CelebrateIcon size={16} color="#856404" />
+                  <Text style={[styles.hanchanText, styles.chipText]}>チップ</Text>
+                </View>
                 <Text style={[styles.timeText, styles.chipText]}>{formatted_time}</Text>
               </View>
               <View style={styles.chipGrid}>
@@ -225,6 +229,11 @@ const styles = StyleSheet.create({
   },
   chipText: {
     color: '#856404',
+  },
+  chipTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   timeText: {
     fontSize: 11,
