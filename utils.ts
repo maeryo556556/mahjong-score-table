@@ -190,11 +190,11 @@ export const shareDataToRecords = (data: ShareGameData, now: number = Date.now()
 
 // ---------- プレイヤー名の変更（Issue #58） ----------
 
-export const MAX_PLAYER_NAME_LENGTH = 4;
+export const MAX_PLAYER_NAME_LENGTH = 6; // Issue #60: 4文字→6文字
 
 /**
  * ゲーム途中のプレイヤー名変更の入力を検証する。問題なければ null、あればエラーメッセージを返す。
- * 記録はプレイヤー名で紐づけているため、空欄・4文字超・重複は不可とする。
+ * 記録はプレイヤー名で紐づけているため、空欄・上限文字数超・重複は不可とする。
  */
 export const validatePlayerNamesChange = (
   currentNames: readonly string[],
@@ -219,3 +219,56 @@ export const validatePlayerNamesChange = (
 /** 変更前後で名前が1つでも変わっているか */
 export const hasPlayerNamesChanged = (currentNames: readonly string[], newNames: readonly string[]): boolean =>
   currentNames.length !== newNames.length || currentNames.some((name, i) => name !== newNames[i].trim());
+
+// ---------- 過去のゲームの保存上限とお気に入り（Issue #60） ----------
+
+// Issue #60 本文の「50件」は、Issue コメントの確定値（お気に入りを含めて合計100件・お気に入りは最大20件）に読み替えている
+
+/** 終了済みゲームの保存上限（お気に入りを含む合計）。超えたら古い通常データ（お気に入り以外）から自動で削除する */
+export const MAX_SAVED_GAMES = 100;
+
+/**
+ * お気に入りの上限。上限に達している状態では新たに登録できない（メッセージを表示し、自動解除はしない）。
+ * お気に入りは最大20件なので、保存枠（100件）がお気に入りだけで埋まることはない。
+ */
+export const MAX_FAVORITE_GAMES = 20;
+
+export interface PrunableGame {
+  id: number;
+  created_at: number;
+  favorite: number | boolean;
+}
+
+/**
+ * 保存上限を超えたために削除すべき終了済みゲームのIDを返す。
+ * - 上限はお気に入りを含めた合計件数に対して適用する
+ * - 削除するのは通常データ（お気に入り以外）のみで、古いもの（created_at の昇順、同時刻は id の昇順）から削除する
+ * - お気に入りと protectIds に含まれるゲーム（保存したばかりのゲームなど）は削除しない
+ * 削除できる通常データが足りない場合は、削除できる分だけを返す
+ * （お気に入りは最大20件のため、通常の上限100件ではこの状況は起こらない）。
+ */
+export const selectGamesToPrune = (
+  games: readonly PrunableGame[],
+  limit: number = MAX_SAVED_GAMES,
+  protectIds: readonly number[] = []
+): number[] => {
+  const overflow = games.length - Math.max(0, limit);
+  if (overflow <= 0) return [];
+  const protect = new Set(protectIds);
+  return games
+    .filter(g => !g.favorite && !protect.has(g.id))
+    .slice()
+    .sort((a, b) => (a.created_at - b.created_at) || (a.id - b.id))
+    .slice(0, overflow)
+    .map(g => g.id);
+};
+
+/**
+ * お気に入りに登録できるか。上限（20件）に達している場合は登録できない（自動解除はしない）。
+ * 既にお気に入りのゲームは件数が増えないため常に true。
+ */
+export const canAddFavorite = (
+  favoriteIds: readonly number[],
+  gameId: number,
+  limit: number = MAX_FAVORITE_GAMES
+): boolean => favoriteIds.includes(gameId) || favoriteIds.length < limit;

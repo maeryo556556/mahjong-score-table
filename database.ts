@@ -4,6 +4,10 @@ import {
   shareDataToRecords,
   formatDate,
   formatTime,
+  selectGamesToPrune,
+  canAddFavorite,
+  MAX_SAVED_GAMES,
+  MAX_FAVORITE_GAMES,
 } from './utils';
 import type { ShareGameData, ShareGameDataV2 } from './utils';
 import type { JoinedSession, LiveSessionStatus } from './liveSession';
@@ -102,6 +106,12 @@ export const initDatabase = () => {
   } catch {
     // カラムが既に存在する場合は無視
   }
+  // お気に入り（Issue #60）
+  try {
+    getDb().runSync('ALTER TABLE games ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
 };
 
 // ゲーム作成
@@ -179,6 +189,53 @@ export const getCurrentGame = () => {
 // ゲーム終了
 export const finishGame = (gameId: number) => {
   getDb().runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
+  // 保存上限（お気に入りを含めて合計100件）を超えたら古い通常データから削除する（Issue #60）
+  // 削除に失敗しても保存自体は成功させる
+  try {
+    pruneOldGames([gameId]);
+  } catch {
+    // 次回の保存時に再度削除を試みる
+  }
+};
+
+// ---- 過去のゲームの保存上限とお気に入り（Issue #60） ----
+// 保存上限はお気に入りを含めて合計100件。超えた分は古い通常データ（お気に入り以外）から削除し、
+// お気に入り（最大20件）は自動削除の対象外とする。
+// 削除は保存時（ゲーム終了・共有ゲームの取り込み）にのみ行い、保存したばかりのゲームは削除しない。
+// お気に入りは最大20件のため保存枠がお気に入りだけで埋まることはなく、新規ゲームの保存は常に成功する。
+
+// 保存上限（合計件数）を超えた分を、古い通常データ（お気に入り以外）から削除する。削除した件数を返す
+// protectIds: 保存したばかりのゲームなど、削除してはいけないゲーム
+export const pruneOldGames = (protectIds: number[] = [], limit: number = MAX_SAVED_GAMES): number => {
+  const games = getDb().getAllSync<{ id: number; created_at: number; favorite: number }>(
+    'SELECT id, created_at, favorite FROM games WHERE finished = 1'
+  );
+  const ids = selectGamesToPrune(games, limit, protectIds);
+  ids.forEach(id => deleteGame(id));
+  return ids.length;
+};
+
+/**
+ * お気に入りの登録・解除。お気に入りの登録・解除ではゲームを削除しない。
+ * 上限（20件）に達している状態での登録は行わず、'limit' を返す（自動解除はしない）。
+ */
+export const setGameFavorite = (
+  gameId: number,
+  favorite: boolean,
+  limit: number = MAX_FAVORITE_GAMES
+): 'added' | 'removed' | 'limit' => {
+  if (!favorite) {
+    getDb().runSync('UPDATE games SET favorite = 0 WHERE id = ?', [gameId]);
+    return 'removed';
+  }
+  const favoriteIds = getDb()
+    .getAllSync<{ id: number }>('SELECT id FROM games WHERE favorite = 1')
+    .map(r => r.id);
+  if (!canAddFavorite(favoriteIds, gameId, limit)) {
+    return 'limit';
+  }
+  getDb().runSync('UPDATE games SET favorite = 1 WHERE id = ?', [gameId]);
+  return 'added';
 };
 
 // ゲームをIDで取得
@@ -198,10 +255,11 @@ export const getFinishedGames = () => {
     start_date: string;
     created_at: number;
     imported: number;
+    favorite: number;
     live_session_code: string | null;
     live_session_expires_at: number | null;
   }>(
-    'SELECT id, player_count, start_date, created_at, imported, live_session_code, live_session_expires_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
+    'SELECT id, player_count, start_date, created_at, imported, favorite, live_session_code, live_session_expires_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
   );
   return games.map(game => {
     const players = getDb().getAllSync<{ player_name: string }>(
@@ -417,6 +475,14 @@ export const importShareData = (
     });
   });
 
+  // 保存上限（お気に入りを含めて合計100件）を超えたら古い通常データから削除する（Issue #60）
+  // 削除に失敗しても保存自体は成功させる
+  try {
+    pruneOldGames([gameId]);
+  } catch {
+    // 次回の保存時に再度削除を試みる
+  }
+
   return gameId;
 };
 
@@ -446,7 +512,7 @@ export const renamePlayers = (gameId: number, newNames: string[]) => {
   if (currentNames.length !== newNames.length) {
     throw new Error('プレイヤー数が一致しません');
   }
-  const tempName = (i: number) => `__rename__${gameId}_${i}__`; // 4文字以内の実名とは衝突しない
+  const tempName = (i: number) => `__rename__${gameId}_${i}__`; // 上限文字数以内の実名とは衝突しない
   getDb().withTransactionSync(() => {
     currentNames.forEach((oldName, i) => {
       getDb().runSync('UPDATE scores SET player_name = ? WHERE game_id = ? AND player_name = ?', [tempName(i), gameId, oldName]);

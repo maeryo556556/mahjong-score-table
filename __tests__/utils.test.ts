@@ -9,6 +9,11 @@ import {
   buildDefaultPlayerNames,
   validatePlayerNamesChange,
   hasPlayerNamesChanged,
+  MAX_PLAYER_NAME_LENGTH,
+  selectGamesToPrune,
+  canAddFavorite,
+  MAX_SAVED_GAMES,
+  MAX_FAVORITE_GAMES,
 } from '../utils';
 import type { ShareGameDataV1, ShareGameDataV2 } from '../utils';
 
@@ -233,8 +238,10 @@ describe('validatePlayerNamesChange（Issue #58: ゲーム途中の名前変更�
     expect(validatePlayerNamesChange(current, ['太郎', '  ', '次郎', '美咲'])).toBe('すべてのプレイヤーの名前を入力してください');
   });
 
-  it('5文字以上はエラー', () => {
-    expect(validatePlayerNamesChange(current, ['たろうくん', '花子', '次郎', '美咲'])).toBe('プレイヤー名は4文字以内で入力してください');
+  it('6文字までは許可し、7文字以上はエラー（Issue #60）', () => {
+    expect(MAX_PLAYER_NAME_LENGTH).toBe(6);
+    expect(validatePlayerNamesChange(current, ['たろうくんだ', '花子', '次郎', '美咲'])).toBeNull();
+    expect(validatePlayerNamesChange(current, ['たろうくんです', '花子', '次郎', '美咲'])).toBe('プレイヤー名は6文字以内で入力してください');
   });
 
   it('重複はエラー（記録は名前で紐づくため）', () => {
@@ -262,5 +269,85 @@ describe('hasPlayerNamesChanged', () => {
 
   it('入れ替えも変更とみなす', () => {
     expect(hasPlayerNamesChanged(['A', 'B', 'C'], ['B', 'A', 'C'])).toBe(true);
+  });
+});
+
+describe('selectGamesToPrune（保存上限: Issue #60）', () => {
+  // id が大きいほど新しいゲーム
+  const makeGames = (count: number, favoriteIds: number[] = []) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i + 1,
+      created_at: 1000 + i,
+      favorite: favoriteIds.includes(i + 1) ? 1 : 0,
+    }));
+
+  it('上限はお気に入りを含めて合計100件・お気に入りは最大20件', () => {
+    expect(MAX_SAVED_GAMES).toBe(100);
+    expect(MAX_FAVORITE_GAMES).toBe(20);
+  });
+
+  it('上限以内なら何も削除しない', () => {
+    expect(selectGamesToPrune(makeGames(100))).toEqual([]);
+    expect(selectGamesToPrune(makeGames(100, [1, 2, 3]))).toEqual([]);
+  });
+
+  it('上限を超えたら古いものから削除する', () => {
+    expect(selectGamesToPrune(makeGames(102))).toEqual([1, 2]);
+  });
+
+  it('お気に入りも合計件数に数え、削除は古い通常データから行う（お気に入りは対象外）', () => {
+    // 合計102件（うち古い2件がお気に入り）→ 2件超過。お気に入りを飛ばして古い通常データ2件を削除
+    expect(selectGamesToPrune(makeGames(102, [1, 2]))).toEqual([3, 4]);
+    // お気に入り20件を含む合計101件 → 最も古い通常データ1件を削除し、合計100件になる
+    const favorites = Array.from({ length: 20 }, (_, i) => i + 1);
+    const games = makeGames(101, favorites);
+    const pruned = selectGamesToPrune(games);
+    expect(pruned).toEqual([21]);
+    expect(games.length - pruned.length).toBe(100);
+    expect(pruned.some(id => favorites.includes(id))).toBe(false);
+  });
+
+  it('お気に入りが最大20件あっても新規ゲーム（保護対象）は保存でき、合計は上限に収まる', () => {
+    const favorites = Array.from({ length: 20 }, (_, i) => i + 1);
+    const games = makeGames(101, favorites); // id: 101 が保存したばかりのゲーム
+    const pruned = selectGamesToPrune(games, MAX_SAVED_GAMES, [101]);
+    expect(pruned).not.toContain(101);
+    expect(games.length - pruned.length).toBe(MAX_SAVED_GAMES);
+  });
+
+  it('保護対象は古くても残し、その分ほかの古いものを削除する', () => {
+    // 再開して終了した古いゲーム（id: 1）を保護
+    expect(selectGamesToPrune(makeGames(4), 3, [1])).toEqual([2]);
+  });
+
+  it('作成日時が同じ場合は id の小さいものを古いとみなす', () => {
+    const games = [
+      { id: 1, created_at: 1000, favorite: 0 },
+      { id: 2, created_at: 1000, favorite: 0 },
+    ];
+    expect(selectGamesToPrune(games, 1)).toEqual([1]);
+  });
+});
+
+describe('canAddFavorite（お気に入り上限: Issue #60）', () => {
+  const ids = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
+
+  it('上限未満なら登録できる', () => {
+    expect(canAddFavorite([], 100)).toBe(true);
+    expect(canAddFavorite(ids(19), 100)).toBe(true);
+  });
+
+  it('上限（20件）に達していると登録できない（自動解除はしない）', () => {
+    expect(canAddFavorite(ids(20), 100)).toBe(false);
+    expect(canAddFavorite(ids(21), 100)).toBe(false);
+  });
+
+  it('既にお気に入りのゲームは上限でも可（件数は増えない）', () => {
+    expect(canAddFavorite(ids(20), 5)).toBe(true);
+  });
+
+  it('上限値を指定できる', () => {
+    expect(canAddFavorite(ids(2), 100, 3)).toBe(true);
+    expect(canAddFavorite(ids(3), 100, 3)).toBe(false);
   });
 });

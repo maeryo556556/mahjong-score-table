@@ -17,7 +17,10 @@ import {
   deleteJoinedSession,
   purgeExpiredJoinedSessions,
   getSavedLiveSessionCodes,
+  setGameFavorite,
+  clearAllData,
 } from '../database';
+import { MAX_SAVED_GAMES, MAX_FAVORITE_GAMES } from '../utils';
 import { isLocalSessionActive, selectRejoinableSessions } from '../liveSession';
 import type { JoinedSession } from '../liveSession';
 
@@ -30,7 +33,7 @@ interface PastGamesScreenProps {
   onJoinLiveSession: (code: string) => void;
 }
 
-type ListGame = ReturnType<typeof getUnfinishedGames>[number] & { imported?: number };
+type ListGame = ReturnType<typeof getUnfinishedGames>[number] & { imported?: number; favorite?: number };
 
 const isActive = (game: ListGame, now: number) =>
   isLocalSessionActive(game.live_session_code, game.live_session_expires_at, now);
@@ -93,6 +96,40 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
     );
   };
 
+  // お気に入りの登録・解除（Issue #60）
+  // 上限（20件）に達している場合は登録せず、上限であることを伝える（自動解除はしない）
+  const handleToggleFavorite = (game: ListGame) => {
+    const result = setGameFavorite(game.id, game.favorite !== 1);
+    if (result === 'limit') {
+      Alert.alert(
+        'お気に入り',
+        `お気に入りは最大${MAX_FAVORITE_GAMES}件です。\n登録するには、ほかのお気に入りを解除してください。`
+      );
+      return;
+    }
+    refreshGames();
+  };
+
+  // 保存データのクリア（Issue #60: セットアップ画面から移動）
+  const handleClearData = () => {
+    Alert.alert(
+      'データ削除',
+      '保存されているすべてのゲームデータ（お気に入り・中断中のゲームを含む）を削除しますか？\nこの操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: () => {
+            clearAllData();
+            refreshGames();
+            Alert.alert('完了', 'データをクリアしました');
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteGame = (gameId: number, startDate: string) => {
     Alert.alert(
       'ゲーム削除',
@@ -123,6 +160,9 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.limitNote}>
+            ☆をタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。保存はお気に入りを含めて{MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。
+          </Text>
           {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58） */}
           {joinedSessions.map(session => (
             <TouchableOpacity
@@ -189,9 +229,25 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                         </View>
                       )}
                     </View>
-                    <Text style={styles.gameType}>
-                      {game.player_count === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
-                    </Text>
+                    <View style={styles.gameTypeRow}>
+                      <Text style={styles.gameType}>
+                        {game.player_count === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
+                      </Text>
+                      {/* お気に入り（終了済みゲームのみ: Issue #60） */}
+                      {!isHostLive && (
+                        <TouchableOpacity
+                          style={styles.favoriteButton}
+                          onPress={() => handleToggleFavorite(game)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={game.favorite === 1 ? 'お気に入りを解除' : 'お気に入りに登録'}
+                        >
+                          <Text style={[styles.favoriteIcon, game.favorite === 1 && styles.favoriteIconActive]}>
+                            {game.favorite === 1 ? '★' : '☆'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.gameCardBody}>
                     <Text style={styles.playerList}>
@@ -204,6 +260,13 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                 </TouchableOpacity>
               );
             })
+          )}
+
+          {/* 保存データのクリア（Issue #60: セットアップ画面から移動） */}
+          {(games.length > 0 || joinedSessions.length > 0) && (
+            <TouchableOpacity style={styles.clearButton} onPress={handleClearData} accessibilityRole="button">
+              <Text style={styles.clearButtonText}>保存データをクリア</Text>
+            </TouchableOpacity>
           )}
         </ScrollView>
       </SafeAreaView>
@@ -320,6 +383,40 @@ const styles = StyleSheet.create({
   gameType: {
     fontSize: 13,
     color: '#6c757d',
+  },
+  gameTypeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  favoriteButton: {
+    paddingHorizontal: 2,
+  },
+  favoriteIcon: {
+    fontSize: 20,
+    color: '#adb5bd',
+  },
+  favoriteIconActive: {
+    color: '#f9a825',
+  },
+  limitNote: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  clearButton: {
+    backgroundColor: '#dc3545',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  clearButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   gameCardBody: {
     flexDirection: 'row',

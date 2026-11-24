@@ -65,6 +65,16 @@ interface GameScreenProps {
 
 type LiveViewStatus = 'connecting' | LiveSessionStatus;
 
+// 有効期限の表示（例: 2026/11/26 21:30）
+const formatExpiresAt = (expiresAt: number) =>
+  new Date(expiresAt).toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
 export default function GameScreen({
   gameId: gameIdProp,
   onFinish,
@@ -88,6 +98,8 @@ export default function GameScreen({
   // 終了済みゲームのコード共有（ended: true のセッションとして発行）
   const [finishedShare, setFinishedShare] = useState<{ code: string; expiresAt: number } | null>(null);
   const [finishedSharePublishing, setFinishedSharePublishing] = useState(false);
+  // 共有コード表示モーダル。閉じても finishedShare は残し、画面上に有効期限を表示し続ける（Issue #60）
+  const [showFinishedShareModal, setShowFinishedShareModal] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollTopButtonOpacity = useRef(new Animated.Value(0)).current;
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -445,9 +457,10 @@ export default function GameScreen({
     if (finishedSharePublishing) return;
     setFinishedSharePublishing(true);
     try {
-      // 共有するたびに新しいコードを発行する（有効期限は発行から24時間）
+      // 共有するたびに新しいコードを発行する（有効期限は発行から48時間）
       const session = await getLiveSessionService().publishFinished(buildShareData(gameId));
       setFinishedShare(session);
+      setShowFinishedShareModal(true);
     } catch {
       Alert.alert('エラー', '共有コードを発行できませんでした。\n通信環境を確認してください');
     } finally {
@@ -459,7 +472,7 @@ export default function GameScreen({
     if (finishedSharePublishing) return;
     Alert.alert(
       'ゲームを共有',
-      '6桁の数字のセッションコードを発行して共有します。\nコードの有効期限は発行から24時間です。',
+      '6桁の数字のセッションコードを発行して共有します。\nコードの有効期限は発行から48時間です。',
       [
         { text: 'キャンセル', style: 'cancel' },
         { text: 'コードで共有', onPress: publishFinishedShare },
@@ -536,6 +549,15 @@ export default function GameScreen({
           onScroll={handleScroll}
           scrollEventThrottle={16}
         >
+          {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58）。Issue #60 で画面最上部の小さいボタンに変更 */}
+          {!readOnly && (
+            <View style={styles.topBar}>
+              <TouchableOpacity style={styles.renameButton} onPress={openRenameModal} accessibilityRole="button">
+                <Text style={styles.renameButtonText}>✏️ 名前変更</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* ヘッダー */}
           <View style={styles.header}>
             {isLiveViewer ? (
@@ -598,7 +620,7 @@ export default function GameScreen({
               ) : (
                 <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
                   {liveStatus === 'live'
-                    ? 'ホストの入力が自動で反映されます（編集不可）'
+                    ? `ホストの入力が自動で反映されます（編集不可）${liveExpiresAt ? `\n有効期限: ${formatExpiresAt(liveExpiresAt)}` : ''}`
                     : liveStatus === 'ended'
                       ? 'ホストが共有を終了しました'
                       : 'セッションの有効期限が切れました'}
@@ -619,6 +641,25 @@ export default function GameScreen({
             </View>
           )}
 
+          {/* 終了済みゲームの共有中: モーダルを閉じた後もコードと有効期限を表示（Issue #60） */}
+          {readOnly && !isLiveViewer && finishedShare && (
+            <TouchableOpacity
+              style={styles.liveBanner}
+              onPress={() => setShowFinishedShareModal(true)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.liveBannerTitle}>
+                📤 共有中  コード: {finishedShare.code}
+              </Text>
+              <Text style={styles.liveBannerText}>
+                {Date.now() < finishedShare.expiresAt
+                  ? `有効期限: ${formatExpiresAt(finishedShare.expiresAt)}`
+                  : '有効期限が切れました。再度共有するには「共有」をタップ'}
+              </Text>
+              <Text style={styles.liveBannerText}>タップでコードを表示</Text>
+            </TouchableOpacity>
+          )}
+
           {!readOnly && hostSession && (
             <TouchableOpacity
               style={styles.liveBanner}
@@ -626,6 +667,9 @@ export default function GameScreen({
             >
               <Text style={styles.liveBannerTitle}>
                 📡 リアルタイム共有中  コード: {hostSession.code}
+              </Text>
+              <Text style={styles.liveBannerText}>
+                有効期限: {formatExpiresAt(hostSession.expiresAt)}
               </Text>
               <Text style={styles.liveBannerText}>
                 入力は自動で共有されます。タップでコードを表示
@@ -734,11 +778,6 @@ export default function GameScreen({
                   </TouchableOpacity>
               </View>
               </View>
-
-              {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58） */}
-              <TouchableOpacity style={styles.renameButton} onPress={openRenameModal} accessibilityRole="button">
-                <Text style={styles.renameButtonText}>✏️ プレイヤー名を変更</Text>
-              </TouchableOpacity>
             </>
           )}
 
@@ -835,14 +874,12 @@ export default function GameScreen({
               <View style={styles.shareModalContent}>
                 <Text style={styles.shareModalTitle}>リアルタイム共有</Text>
                 <Text style={styles.shareModalDescription}>
-                  参加者はセットアップ画面の「ゲームを取り込む」に{'\n'}
-                  このコードを入力すると、スコアをリアルタイムで閲覧できます。{'\n'}
-                  入力内容は自動で共有され、ゲーム終了時または有効期限で共有が終了します。
+                  「ゲームを取り込む」にこのコードを入力すると閲覧できます
                 </Text>
                 <Text style={styles.liveCodeText} selectable>{hostSession?.code}</Text>
                 {hostSession && (
                   <Text style={styles.liveExpiresText}>
-                    有効期限: {new Date(hostSession.expiresAt).toLocaleString('ja-JP')}
+                    有効期限: {formatExpiresAt(hostSession.expiresAt)}
                   </Text>
                 )}
                 <View style={styles.shareModalButtons}>
@@ -864,18 +901,17 @@ export default function GameScreen({
           </Modal>
         )}
         {readOnly && !isLiveViewer && (
-          <Modal visible={!!finishedShare} transparent animationType="fade">
+          <Modal visible={showFinishedShareModal && !!finishedShare} transparent animationType="fade">
             <View style={styles.modalOverlay}>
               <View style={styles.shareModalContent}>
                 <Text style={styles.shareModalTitle}>ゲームを共有</Text>
                 <Text style={styles.shareModalDescription}>
-                  相手はセットアップ画面の「ゲームを取り込む」に{'\n'}
-                  このコードを入力すると、対局を閲覧して履歴に保存できます。
+                  「ゲームを取り込む」にこのコードを入力すると閲覧・保存できます
                 </Text>
                 <Text style={styles.liveCodeText} selectable>{finishedShare?.code}</Text>
                 {finishedShare && (
                   <Text style={styles.liveExpiresText}>
-                    有効期限: {new Date(finishedShare.expiresAt).toLocaleString('ja-JP')}
+                    有効期限: {formatExpiresAt(finishedShare.expiresAt)}
                   </Text>
                 )}
                 <View style={styles.shareModalButtons}>
@@ -893,7 +929,7 @@ export default function GameScreen({
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCloseButton]}
-                    onPress={() => setFinishedShare(null)}
+                    onPress={() => setShowFinishedShareModal(false)}
                   >
                     <Text style={styles.shareModalCloseText}>閉じる</Text>
                   </TouchableOpacity>
@@ -1101,18 +1137,22 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   // ---- プレイヤー名の変更 ----
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
   renameButton: {
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 10,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.4)',
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
   },
   renameButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   renameInputRow: {
@@ -1248,8 +1288,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   chipCard: {
-    // チップ移動エリアは薄いクリーム色で他の入力エリアと区別する
-    backgroundColor: '#fff8e1',
+    // チップ移動エリアはクリーム色で他の入力エリアと区別する（Issue #60: 少し濃くした）
+    backgroundColor: '#ffecb3',
   },
   loadingRow: {
     flexDirection: 'row',

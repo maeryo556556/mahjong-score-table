@@ -20,14 +20,13 @@ import {
   createGame,
   getFinishedGames,
   getUnfinishedGames,
-  clearAllData,
   finishGame,
   deleteGame,
   getLastPlayerNames,
   getJoinedSessions,
   getSavedLiveSessionCodes,
 } from '../database';
-import { buildDefaultPlayerNames } from '../utils';
+import { buildDefaultPlayerNames, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import { extractSessionCode, sanitizeSessionCodeInput, selectRejoinableSessions, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
@@ -57,7 +56,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       image: require('../assets/iphone/promo_1_setup.png'),
       steps: [
         '3人麻雀 or 4人麻雀を選択',
-        'プレイヤー名を入力（4文字以内）',
+        `プレイヤー名を入力（${MAX_PLAYER_NAME_LENGTH}文字以内）`,
         '「ゲーム開始」をタップ',
       ],
     },
@@ -67,7 +66,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       steps: [
         'ドラムロールで各プレイヤーのポイントを入力',
         '合計が ±0 になるよう調整して「スコアを記録」',
-        'プレイヤー名は対局の途中でも「プレイヤー名を変更」で修正できる',
+        'プレイヤー名は対局の途中でも画面上部の「名前変更」で修正できる',
       ],
     },
     {
@@ -94,7 +93,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       steps: [
         'ゲーム画面の「リアルタイム共有を開始」をタップ',
         '6桁の数字のセッションコードを同じ卓のメンバーに伝える',
-        '記録は自動で共有され、ゲーム終了で共有も終了（最長24時間）',
+        '記録は自動で共有され、ゲーム終了で共有も終了（最長48時間）',
       ],
     },
     {
@@ -111,7 +110,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       image: require('../assets/iphone/promo_6_share.png'),
       steps: [
         '「過去のゲームを見る」で終了した対局を確認',
-        '「共有」で6桁のセッションコード（24時間有効）を発行',
+        '「共有」で6桁のセッションコード（48時間有効）を発行',
         '受け取った側は閲覧して「対局を履歴に保存」できる',
       ],
     },
@@ -182,8 +181,8 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       return;
     }
 
-    if (names.some(name => name.length > 4)) {
-      Alert.alert('入力エラー', 'プレイヤー名は4文字以内で入力してください');
+    if (names.some(name => name.length > MAX_PLAYER_NAME_LENGTH)) {
+      Alert.alert('入力エラー', `プレイヤー名は${MAX_PLAYER_NAME_LENGTH}文字以内で入力してください`);
       return;
     }
 
@@ -219,26 +218,6 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     setShowImportModal(false);
     setImportCode('');
     onJoinLiveSession(sessionCode);
-  };
-
-  const handleClearData = () => {
-    Alert.alert(
-      'データ削除',
-      '保存されているゲームデータを削除しますか？\nこの操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: () => {
-            clearAllData();
-            setHasPastGames(false);
-            setSuspendedGames([]);
-            Alert.alert('完了', 'データをクリアしました');
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -316,7 +295,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
 
             {/* プレイヤー名入力 */}
             <Text style={styles.label}>プレイヤー設定</Text>
-            <Text style={styles.hintText}>※ 4文字以内で入力してください</Text>
+            <Text style={styles.hintText}>※ {MAX_PLAYER_NAME_LENGTH}文字以内で入力してください</Text>
             <View style={styles.playerInputs}>
               {playerNames.slice(0, playerCount).map((name, index) => (
                 <View key={index} style={styles.inputGroup}>
@@ -357,13 +336,6 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               onPress={() => setShowImportModal(true)}
             >
               <Text style={styles.startButtonText}>ゲームを取り込む</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.startButton, styles.dangerButton, styles.buttonMarginTop]}
-              onPress={handleClearData}
-            >
-              <Text style={styles.startButtonText}>保存データをクリア</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -697,9 +669,6 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: '#6c757d',
-  },
-  dangerButton: {
-    backgroundColor: '#dc3545',
   },
   startButtonText: {
     color: '#fff',
