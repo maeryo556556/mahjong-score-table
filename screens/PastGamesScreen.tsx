@@ -21,6 +21,7 @@ import {
   clearAllData,
 } from '../database';
 import { MAX_SAVED_GAMES, MAX_FAVORITE_GAMES } from '../utils';
+import { StarIcon, TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 import { isLocalSessionActive, selectRejoinableSessions } from '../liveSession';
 import type { JoinedSession } from '../liveSession';
 
@@ -161,7 +162,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.limitNote}>
-            ☆をタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。保存はお気に入りを含めて{MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。
+            星マークをタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。保存はお気に入りを含めて{MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。
           </Text>
           {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58） */}
           {joinedSessions.map(session => (
@@ -183,9 +184,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     </Text>
                   </View>
                 </View>
-                <Text style={styles.gameType}>
-                  {session.playerCount === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
-                </Text>
+                <GameTypeLabel playerCount={session.playerCount} />
               </View>
               <View style={styles.gameCardBody}>
                 <Text style={styles.playerList}>
@@ -230,9 +229,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                       )}
                     </View>
                     <View style={styles.gameTypeRow}>
-                      <Text style={styles.gameType}>
-                        {game.player_count === 3 ? '🎴 3人麻雀' : '🀄 4人麻雀'}
-                      </Text>
+                      <GameTypeLabel playerCount={game.player_count} />
                       {/* お気に入り（終了済みゲームのみ: Issue #60） */}
                       {!isHostLive && (
                         <TouchableOpacity
@@ -242,9 +239,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                           accessibilityRole="button"
                           accessibilityLabel={game.favorite === 1 ? 'お気に入りを解除' : 'お気に入りに登録'}
                         >
-                          <Text style={[styles.favoriteIcon, game.favorite === 1 && styles.favoriteIconActive]}>
-                            {game.favorite === 1 ? '★' : '☆'}
-                          </Text>
+                          <StarIcon size={22} filled={game.favorite === 1} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -271,6 +266,16 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
+  );
+}
+
+// 麻雀タイプの表示（手書き風アイコン＋人数: Issue #62）
+function GameTypeLabel({ playerCount }: { playerCount: number }) {
+  return (
+    <View style={styles.gameTypeLabel}>
+      {playerCount === 3 ? <TileFanIcon size={16} /> : <TileIcon size={16} />}
+      <Text style={styles.gameType}>{playerCount === 3 ? '3人麻雀' : '4人麻雀'}</Text>
+    </View>
   );
 }
 
@@ -392,12 +397,10 @@ const styles = StyleSheet.create({
   favoriteButton: {
     paddingHorizontal: 2,
   },
-  favoriteIcon: {
-    fontSize: 20,
-    color: '#adb5bd',
-  },
-  favoriteIconActive: {
-    color: '#f9a825',
+  gameTypeLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   limitNote: {
     fontSize: 12,

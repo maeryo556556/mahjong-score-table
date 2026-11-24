@@ -27,6 +27,7 @@ import {
   getSavedLiveSessionCodes,
 } from '../database';
 import { buildDefaultPlayerNames, MAX_PLAYER_NAME_LENGTH } from '../utils';
+import { TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 import { extractSessionCode, sanitizeSessionCodeInput, selectRejoinableSessions, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
@@ -49,14 +50,15 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const importCodeInputRef = useRef<TextInput>(null);
 
   // 使い方ガイド（Issue #58: リアルタイム共有・閲覧モード・6桁のセッションコードに合わせて更新）
+  // Issue #62: 各ステップを要点だけの短い文に整理
   // 各スライドの画像は generate_assets.py で生成した画面イメージ（assets/iphone/）
   const guideSlides = [
     {
       title: 'ゲームの始め方',
       image: require('../assets/iphone/promo_1_setup.png'),
       steps: [
-        '3人麻雀 or 4人麻雀を選択',
-        `プレイヤー名を入力（${MAX_PLAYER_NAME_LENGTH}文字以内）`,
+        '3人／4人麻雀を選ぶ',
+        `名前を入力（${MAX_PLAYER_NAME_LENGTH}文字以内）`,
         '「ゲーム開始」をタップ',
       ],
     },
@@ -64,54 +66,53 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       title: 'スコアの記録',
       image: require('../assets/iphone/promo_2_score.png'),
       steps: [
-        'ドラムロールで各プレイヤーのポイントを入力',
-        '合計が ±0 になるよう調整して「スコアを記録」',
-        'プレイヤー名は対局の途中でも画面上部の「名前変更」で修正できる',
+        'ドラムロールでポイントを入力',
+        '合計±0にして「スコアを記録」',
+        '名前は「名前変更」でいつでも修正',
       ],
     },
     {
       title: 'チップの記録',
       image: require('../assets/iphone/promo_3_chip.png'),
       steps: [
-        'チップ移動がある場合に入力',
-        'こちらも合計 ±0 が必要',
-        '「チップを記録」で保存',
+        'チップの移動を入力',
+        '合計±0にして「チップを記録」',
       ],
     },
     {
       title: 'ゲームの中断・終了',
       image: require('../assets/iphone/promo_4_summary.png'),
       steps: [
-        '「中断」でゲームを一時保存（後で再開可能）',
-        '「ゲーム終了」で最終結果を確定',
-        '記録の長押しで個別削除も可能',
+        '「中断」で一時保存（あとで再開）',
+        '「ゲーム終了」で結果を確定',
+        '記録は長押しで削除',
       ],
     },
     {
       title: 'リアルタイム共有',
       image: require('../assets/iphone/promo_7_live_share.png'),
       steps: [
-        'ゲーム画面の「リアルタイム共有を開始」をタップ',
-        '6桁の数字のセッションコードを同じ卓のメンバーに伝える',
-        '記録は自動で共有され、ゲーム終了で共有も終了（最長48時間）',
+        '「リアルタイム共有を開始」をタップ',
+        '6桁のコードをメンバーに伝える',
+        '記録は自動で共有（ゲーム終了まで・最長48時間）',
       ],
     },
     {
       title: '閲覧モード（参加する側）',
       image: require('../assets/iphone/promo_8_live_viewer.png'),
       steps: [
-        '「ゲームを取り込む」に6桁のセッションコードを入力',
-        'ホストの入力が自動で反映されます（編集不可）',
-        '戻った後も「過去のゲームを見る」から同じ対局を選べば再び閲覧できる',
+        '「ゲームを取り込む」に6桁のコードを入力',
+        'ホストの記録が自動で表示（編集不可）',
+        '「過去のゲームを見る」から再び閲覧できる',
       ],
     },
     {
       title: '過去のゲームと共有',
       image: require('../assets/iphone/promo_6_share.png'),
       steps: [
-        '「過去のゲームを見る」で終了した対局を確認',
-        '「共有」で6桁のセッションコード（48時間有効）を発行',
-        '受け取った側は閲覧して「対局を履歴に保存」できる',
+        '「過去のゲームを見る」で対局を確認',
+        '「共有」で6桁のコードを発行（48時間有効）',
+        '受け取った側は「対局を履歴に保存」できる',
       ],
     },
   ];
@@ -232,7 +233,10 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               <Text style={styles.helpButtonText}>?</Text>
               <Text style={styles.helpButtonLabel}>使い方</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>🀄 麻雀</Text>
+            <View style={styles.titleRow}>
+              <TileIcon size={40} />
+              <Text style={styles.title}>麻雀</Text>
+            </View>
             <Text style={styles.subtitle}>スコアシートモバイル</Text>
           </View>
 
@@ -276,7 +280,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
                   style={[styles.typeButton, playerCount === 4 && styles.typeButtonActive]}
                   onPress={() => handlePlayerCountChange(4)}
                 >
-                  <Text style={styles.typeButtonIcon}>🀄</Text>
+                  <TileIcon size={30} style={styles.typeButtonIcon} />
                   <Text style={[styles.typeButtonText, playerCount === 4 && styles.typeButtonTextActive]}>
                     4人麻雀
                   </Text>
@@ -285,7 +289,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
                   style={[styles.typeButton, playerCount === 3 && styles.typeButtonActive]}
                   onPress={() => handlePlayerCountChange(3)}
                 >
-                  <Text style={styles.typeButtonIcon}>🎴</Text>
+                  <TileFanIcon size={30} style={styles.typeButtonIcon} />
                   <Text style={[styles.typeButtonText, playerCount === 3 && styles.typeButtonTextActive]}>
                     3人麻雀
                   </Text>
@@ -516,6 +520,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   title: {
     fontSize: 36,
     fontWeight: 'bold',
@@ -583,7 +592,6 @@ const styles = StyleSheet.create({
     borderColor: '#2a5298',
   },
   typeButtonIcon: {
-    fontSize: 24,
     marginBottom: 8,
   },
   typeButtonText: {
