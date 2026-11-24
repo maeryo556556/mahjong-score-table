@@ -13,6 +13,8 @@ export default function Index() {
   const [screen, setScreen] = useState<Screen>('setup');
   const [currentGameId, setCurrentGameId] = useState<number | null>(null);
   const [liveSessionCode, setLiveSessionCode] = useState<string | null>(null);
+  // ライブ閲覧から戻る先（過去のゲーム一覧から入った場合は一覧へ戻す）
+  const [liveReturnScreen, setLiveReturnScreen] = useState<'setup' | 'pastGames'>('setup');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -28,18 +30,27 @@ export default function Index() {
   useEffect(() => {
     if (liveCode) {
       setLiveSessionCode(liveCode);
+      setLiveReturnScreen('setup');
       setScreen('liveView');
     }
   }, [liveCode]);
 
   const handleJoinLiveSession = (code: string) => {
     setLiveSessionCode(code);
+    setLiveReturnScreen('setup');
+    setScreen('liveView');
+  };
+
+  // 過去のゲーム一覧から、受信元セッションが有効な取り込み済みゲームを選んだ場合
+  const handleJoinLiveSessionFromHistory = (code: string) => {
+    setLiveSessionCode(code);
+    setLiveReturnScreen('pastGames');
     setScreen('liveView');
   };
 
   const handleLeaveLiveSession = () => {
     setLiveSessionCode(null);
-    setScreen('setup');
+    setScreen(liveReturnScreen);
   };
 
   const handleSavedLiveGame = (gameId: number) => {
@@ -114,6 +125,8 @@ export default function Index() {
         <PastGamesScreen
           onSelectGame={handleSelectPastGame}
           onBack={handleBackFromPastGames}
+          onResumeLiveGame={handleResumeGame}
+          onJoinLiveSession={handleJoinLiveSessionFromHistory}
         />
       )}
       {screen === 'setup' && (

@@ -179,8 +179,16 @@ export const getGameById = (gameId: number) => {
 
 // 終了済みゲーム一覧取得
 export const getFinishedGames = () => {
-  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number; imported: number }>(
-    'SELECT id, player_count, start_date, created_at, imported FROM games WHERE finished = 1 ORDER BY created_at DESC'
+  const games = getDb().getAllSync<{
+    id: number;
+    player_count: number;
+    start_date: string;
+    created_at: number;
+    imported: number;
+    live_session_code: string | null;
+    live_session_expires_at: number | null;
+  }>(
+    'SELECT id, player_count, start_date, created_at, imported, live_session_code, live_session_expires_at FROM games WHERE finished = 1 ORDER BY created_at DESC'
   );
   return games.map(game => {
     const players = getDb().getAllSync<{ player_name: string }>(
@@ -201,8 +209,15 @@ export const getFinishedGames = () => {
 
 // 中断中（未終了）ゲーム一覧取得
 export const getUnfinishedGames = () => {
-  const games = getDb().getAllSync<{ id: number; player_count: number; start_date: string; created_at: number }>(
-    'SELECT id, player_count, start_date, created_at FROM games WHERE finished = 0 ORDER BY created_at DESC'
+  const games = getDb().getAllSync<{
+    id: number;
+    player_count: number;
+    start_date: string;
+    created_at: number;
+    live_session_code: string | null;
+    live_session_expires_at: number | null;
+  }>(
+    'SELECT id, player_count, start_date, created_at, live_session_code, live_session_expires_at FROM games WHERE finished = 0 ORDER BY created_at DESC'
   );
   return games.map(game => {
     const players = getDb().getAllSync<{ player_name: string }>(
@@ -338,7 +353,11 @@ export const buildShareData = (gameId: number): ShareGameDataV2 => {
 };
 
 // 共有データ（セッションから受信したもの）を終了済み・取り込み済みゲームとして保存
-export const importShareData = (data: ShareGameData): number => {
+// liveSession を渡すと、受信元のセッションを記録する（有効な間は過去のゲームからライブ閲覧へ遷移できる）
+export const importShareData = (
+  data: ShareGameData,
+  liveSession: { code: string; expiresAt: number } | null = null
+): number => {
   if (!validateShareData(data)) {
     throw new Error('共有データの形式が正しくありません');
   }
@@ -349,8 +368,8 @@ export const importShareData = (data: ShareGameData): number => {
 
   getDb().withTransactionSync(() => {
     const result = getDb().runSync(
-      'INSERT INTO games (player_count, start_date, created_at, finished, imported) VALUES (?, ?, ?, 1, 1)',
-      [data.pc, data.d, now]
+      'INSERT INTO games (player_count, start_date, created_at, finished, imported, live_session_code, live_session_expires_at) VALUES (?, ?, ?, 1, 1, ?, ?)',
+      [data.pc, data.d, now, liveSession?.code ?? null, liveSession?.expiresAt ?? null]
     );
     gameId = result.lastInsertRowId;
 
@@ -378,7 +397,8 @@ export const importShareData = (data: ShareGameData): number => {
   return gameId;
 };
 
-// ホスト側: ゲームに紐づくリアルタイム共有セッションの取得・保存
+// ゲームに紐づくリアルタイム共有セッションの取得・保存
+// （ホスト側は共有中のセッション、取り込んだゲームは受信元のセッション）
 export const getLiveSession = (gameId: number): { code: string; expiresAt: number } | null => {
   const row = getDb().getFirstSync<{ live_session_code: string | null; live_session_expires_at: number | null }>(
     'SELECT live_session_code, live_session_expires_at FROM games WHERE id = ?',

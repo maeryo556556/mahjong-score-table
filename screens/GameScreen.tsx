@@ -92,6 +92,7 @@ export default function GameScreen({
   // 参加者側: ライブ閲覧
   const [liveStatus, setLiveStatus] = useState<LiveViewStatus>('connecting');
   const [liveGame, setLiveGame] = useState<ShareGameData | null>(null);
+  const [liveExpiresAt, setLiveExpiresAt] = useState<number | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [savedLiveGameId, setSavedLiveGameId] = useState<number | null>(null);
 
@@ -121,6 +122,7 @@ export default function GameScreen({
         const records = shareDataToRecords(snapshot.game);
         setLiveGame(snapshot.game);
         setLiveStatus(snapshot.status);
+        setLiveExpiresAt(snapshot.expiresAt);
         setLiveError(null);
         setPlayers(records.players);
         setPlayerCount(records.playerCount);
@@ -192,46 +194,21 @@ export default function GameScreen({
     }
   };
 
-  const handleEndLiveShare = () => {
-    Alert.alert(
-      'リアルタイム共有を終了',
-      '参加者への共有を終了しますか？\n参加者はその時点の対局を履歴に保存できます。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '終了する',
-          style: 'destructive',
-          onPress: () => {
-            endHostSession();
-            setShowLiveModal(false);
-          },
-        },
-      ]
-    );
-  };
-
   const handleCopyLiveCode = async () => {
     if (!hostSession) return;
     await Clipboard.setStringAsync(hostSession.code);
     Alert.alert('コピー完了', 'セッションコードをクリップボードにコピーしました');
   };
 
-  const handleShareLiveCode = async () => {
-    if (!hostSession) return;
-    try {
-      await Share.share({
-        message: `麻雀スコアシートモバイル リアルタイム共有\nセッションコード: ${hostSession.code}\n${buildSessionUrl(hostSession.code)}`,
-        title: '麻雀スコアシートモバイル - リアルタイム共有',
-      });
-    } catch {
-      // ユーザーがキャンセルした場合など
-    }
-  };
-
   const handleSaveLiveGame = () => {
     if (!liveGame || savedLiveGameId !== null) return;
     try {
-      const newGameId = importShareData(liveGame);
+      // セッションがまだ進行中なら受信元を記録し、有効な間は過去のゲームからライブ閲覧へ入れるようにする
+      const activeSession =
+        liveSessionCode && liveStatus === 'live' && liveExpiresAt !== null && Date.now() < liveExpiresAt
+          ? { code: liveSessionCode, expiresAt: liveExpiresAt }
+          : null;
+      const newGameId = importShareData(liveGame, activeSession);
       setSavedLiveGameId(newGameId);
       Alert.alert('完了', '対局を履歴に保存しました', [
         { text: '閲覧する', onPress: () => onSavedLiveGame?.(newGameId) },
@@ -480,8 +457,14 @@ export default function GameScreen({
     onFinish();
   };
 
+  // 共有モード（Issue #53）: ゲストの閲覧中、またはホストで共有が有効な間は背景を黄色基調にする
+  const isLiveMode = isLiveViewer
+    ? liveStatus === 'live' || liveStatus === 'connecting'
+    : !readOnly && !!hostSession;
+  const gradientColors: [string, string] = isLiveMode ? ['#f9a825', '#fdd835'] : ['#1e3c72', '#2a5298'];
+
   return (
-    <LinearGradient colors={['#1e3c72', '#2a5298']} style={styles.gradient}>
+    <LinearGradient colors={gradientColors} style={styles.gradient}>
       <SafeAreaView style={styles.container}>
         <ScrollView
           ref={scrollViewRef}
@@ -493,10 +476,10 @@ export default function GameScreen({
           <View style={styles.header}>
             {isLiveViewer ? (
               <>
-                <TouchableOpacity style={styles.backButton} onPress={onFinish}>
-                  <Text style={styles.backButtonText}>← 戻る</Text>
+                <TouchableOpacity style={[styles.backButton, isLiveMode && styles.backButtonLive]} onPress={onFinish}>
+                  <Text style={[styles.backButtonText, isLiveMode && styles.liveModeText]}>← 戻る</Text>
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{gameStartDate}</Text>
+                <Text style={[styles.headerTitle, isLiveMode && styles.liveModeText]}>{gameStartDate}</Text>
                 <View style={[styles.liveBadge, liveStatus !== 'live' && styles.liveBadgeInactive]}>
                   <Text style={styles.liveBadgeText}>
                     {liveStatus === 'live' ? '● LIVE' : liveStatus === 'connecting' ? '接続中' : '終了'}
@@ -515,11 +498,11 @@ export default function GameScreen({
               </>
             ) : (
               <>
-                <Text style={styles.headerTitle}>第{currentHanchan}半荘</Text>
+                <Text style={[styles.headerTitle, isLiveMode && styles.liveModeText]}>第{currentHanchan}半荘</Text>
                 <View style={styles.headerButtons}>
                   {onSuspend && (
-                    <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
-                      <Text style={styles.suspendButtonText}>中断</Text>
+                    <TouchableOpacity style={[styles.suspendButton, isLiveMode && styles.suspendButtonLive]} onPress={handleSuspendGame}>
+                      <Text style={[styles.suspendButtonText, isLiveMode && styles.liveModeText]}>中断</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.finishButton} onPress={handleFinishGame}>
@@ -531,9 +514,9 @@ export default function GameScreen({
           </View>
 
           {isLiveViewer && (
-            <View style={styles.liveBanner}>
-              <Text style={styles.liveBannerTitle}>📡 リアルタイム共有 {liveSessionCode}</Text>
-              <Text style={styles.liveBannerText}>
+            <View style={[styles.liveBanner, isLiveMode && styles.liveBannerLive]}>
+              <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>📡 リアルタイム共有 {liveSessionCode}</Text>
+              <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
                 {liveStatus === 'connecting'
                   ? 'セッションに接続しています…'
                   : liveStatus === 'live'
@@ -542,7 +525,7 @@ export default function GameScreen({
                       ? 'ホストが共有を終了しました'
                       : 'セッションの有効期限が切れました'}
               </Text>
-              {liveError && <Text style={styles.liveBannerError}>{liveError}</Text>}
+              {liveError && <Text style={[styles.liveBannerError, isLiveMode && styles.liveBannerErrorLive]}>{liveError}</Text>}
               {(liveStatus === 'ended' || liveStatus === 'expired' || liveError) && liveGame && (
                 <TouchableOpacity
                   style={[styles.liveBannerButton, savedLiveGameId !== null && styles.liveBannerButtonDisabled]}
@@ -557,25 +540,37 @@ export default function GameScreen({
             </View>
           )}
 
-          {!readOnly && (
+          {!readOnly && hostSession && (
             <TouchableOpacity
-              style={[styles.liveBanner, hostSession ? null : styles.liveBannerIdle]}
-              onPress={hostSession ? () => setShowLiveModal(true) : handleStartLiveShare}
-              disabled={liveStarting}
+              style={[styles.liveBanner, styles.liveBannerLive]}
+              onPress={() => setShowLiveModal(true)}
             >
-              <Text style={styles.liveBannerTitle}>
-                {hostSession
-                  ? `📡 リアルタイム共有中  コード: ${hostSession.code}`
-                  : liveStarting ? '📡 リアルタイム共有を開始しています…' : '📡 リアルタイム共有を開始'}
+              <Text style={[styles.liveBannerTitle, styles.liveModeText]}>
+                📡 リアルタイム共有中  コード: {hostSession.code}
               </Text>
-              <Text style={styles.liveBannerText}>
-                {hostSession
-                  ? 'タップでコードの共有・共有の終了'
-                  : '同じ卓のメンバーがコードでスコアを閲覧できます'}
+              <Text style={[styles.liveBannerText, styles.liveModeSubText]}>
+                入力は自動で共有されます。タップでコードを表示
               </Text>
-              {hostSession && liveSyncError && (
-                <Text style={styles.liveBannerError}>同期に失敗しました。通信が戻ると次の記録時に再送されます</Text>
+              {liveSyncError && (
+                <Text style={[styles.liveBannerError, styles.liveBannerErrorLive]}>
+                  同期に失敗しました。通信が戻ると次の記録時に再送されます
+                </Text>
               )}
+            </TouchableOpacity>
+          )}
+
+          {!readOnly && !hostSession && (
+            <TouchableOpacity
+              style={[styles.liveStartButton, liveStarting && styles.liveStartButtonDisabled]}
+              onPress={handleStartLiveShare}
+              disabled={liveStarting}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Text style={styles.liveStartButtonText}>
+                {liveStarting ? '📡 共有を開始しています…' : '📡 リアルタイム共有を開始'}
+              </Text>
+              <Text style={styles.liveStartButtonSubText}>同じ卓のメンバーがコードでスコアを閲覧できます</Text>
             </TouchableOpacity>
           )}
 
@@ -697,7 +692,8 @@ export default function GameScreen({
                 <Text style={styles.shareModalTitle}>リアルタイム共有</Text>
                 <Text style={styles.shareModalDescription}>
                   参加者はセットアップ画面の「ゲームを取り込む」に{'\n'}
-                  このコードを入力すると、スコアをリアルタイムで閲覧できます。
+                  このコードを入力すると、スコアをリアルタイムで閲覧できます。{'\n'}
+                  入力内容は自動で共有され、ゲーム終了時または有効期限で共有が終了します。
                 </Text>
                 <Text style={styles.liveCodeText} selectable>{hostSession?.code}</Text>
                 {hostSession && (
@@ -707,22 +703,10 @@ export default function GameScreen({
                 )}
                 <View style={styles.shareModalButtons}>
                   <TouchableOpacity
-                    style={[styles.shareModalButton, styles.shareModalShareButton]}
-                    onPress={handleShareLiveCode}
-                  >
-                    <Text style={styles.shareModalButtonText}>送信する</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCopyButton]}
                     onPress={handleCopyLiveCode}
                   >
                     <Text style={styles.shareModalButtonText}>コードをコピー</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.shareModalButton, styles.liveEndButton]}
-                    onPress={handleEndLiveShare}
-                  >
-                    <Text style={styles.shareModalButtonText}>共有を終了</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.shareModalButton, styles.shareModalCloseButton]}
@@ -1002,9 +986,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
   },
-  liveBannerIdle: {
-    borderStyle: 'dashed',
-  },
   liveBannerTitle: {
     color: '#fff',
     fontSize: 15,
@@ -1050,8 +1031,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  liveEndButton: {
-    backgroundColor: '#dc3545',
+  // ---- 共有モード（黄色背景）用 ----
+  liveModeText: {
+    color: '#3e2723',
+  },
+  liveModeSubText: {
+    color: 'rgba(62,39,35,0.85)',
+  },
+  backButtonLive: {
+    backgroundColor: 'rgba(62,39,35,0.12)',
+  },
+  suspendButtonLive: {
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderColor: 'rgba(62,39,35,0.3)',
+  },
+  liveBannerLive: {
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderColor: '#f57f17',
+    borderWidth: 2,
+  },
+  liveBannerErrorLive: {
+    color: '#c62828',
+  },
+  // ---- リアルタイム共有の開始ボタン ----
+  liveStartButton: {
+    backgroundColor: '#fdd835',
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  liveStartButtonDisabled: {
+    opacity: 0.6,
+  },
+  liveStartButtonText: {
+    color: '#3e2723',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  liveStartButtonSubText: {
+    color: 'rgba(62,39,35,0.8)',
+    fontSize: 12,
+    marginTop: 4,
   },
   scrollTopButton: {
     position: 'absolute',

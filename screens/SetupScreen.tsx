@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { createGame, getFinishedGames, getUnfinishedGames, clearAllData, finishGame, deleteGame } from '../database';
-import { extractSessionCode } from '../liveSession';
+import { extractSessionCode, sanitizeSessionCodeInput, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
@@ -36,6 +36,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const [showGuide, setShowGuide] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
   const guideListRef = useRef<FlatList>(null);
+  const importCodeInputRef = useRef<TextInput>(null);
 
   const guideSlides = [
     {
@@ -161,7 +162,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const handleImport = () => {
     const rawInput = importCode.trim();
     if (!rawInput) {
-      Alert.alert('入力エラー', 'セッションコードまたは共有リンクを入力してください');
+      Alert.alert('入力エラー', '6桁のセッションコードを入力してください');
       return;
     }
     // セッションコード（またはセッションリンク）ならセッションに参加する。
@@ -169,7 +170,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     const sessionCode = extractSessionCode(rawInput);
     if (!sessionCode) {
       // 静的共有コード（廃止）やその他の文字列はエラー
-      Alert.alert('エラー', 'コードが正しくありません。\n6桁の数字のセッションコードまたは共有リンクを入力してください');
+      Alert.alert('エラー', 'コードが正しくありません。\n6桁の数字のセッションコードを入力してください');
       return;
     }
     setShowImportModal(false);
@@ -330,21 +331,45 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
             <View style={styles.importModalContent}>
               <Text style={styles.importModalTitle}>ゲームを取り込む</Text>
               <Text style={styles.importModalDescription}>
-                共有された6桁の数字のセッションコードまたはリンクを入力してください。{'\n'}
+                共有された6桁の数字のセッションコードを入力してください。{'\n'}
                 進行中の対局はリアルタイムで閲覧でき、終了した対局は履歴に保存できます
               </Text>
-              <TextInput
-                style={styles.importCodeInput}
-                value={importCode}
-                onChangeText={setImportCode}
-                placeholder="セッションコード（例: 123456）または共有リンク"
-                multiline
-                autoFocus
-              />
+              {/* 6桁の数字専用入力欄（Issue #53）: 見えない TextInput で入力を受け、6つの枠に1桁ずつ表示する */}
+              <TouchableWithoutFeedback onPress={() => importCodeInputRef.current?.focus()}>
+                <View style={styles.codeBoxRow}>
+                  {Array.from({ length: SESSION_CODE_LENGTH }, (_, i) => {
+                    const isCurrent = i === Math.min(importCode.length, SESSION_CODE_LENGTH - 1);
+                    return (
+                      <View key={i} style={[styles.codeBox, isCurrent && styles.codeBoxActive]}>
+                        <Text style={styles.codeBoxText}>{importCode[i] ?? ''}</Text>
+                      </View>
+                    );
+                  })}
+                  <TextInput
+                    ref={importCodeInputRef}
+                    style={styles.codeHiddenInput}
+                    value={importCode}
+                    // 数字以外は受け付けない。共有リンクが貼り付けられた場合はコードを取り出す
+                    onChangeText={(text) => setImportCode(sanitizeSessionCodeInput(text))}
+                    keyboardType="number-pad"
+                    textContentType="oneTimeCode"
+                    autoComplete="off"
+                    autoCorrect={false}
+                    caretHidden
+                    autoFocus
+                    accessibilityLabel="6桁のセッションコード"
+                  />
+                </View>
+              </TouchableWithoutFeedback>
               <View style={styles.importModalButtons}>
                 <TouchableOpacity
-                  style={[styles.importModalButton, styles.importModalSubmitButton]}
+                  style={[
+                    styles.importModalButton,
+                    styles.importModalSubmitButton,
+                    importCode.length < SESSION_CODE_LENGTH && styles.importModalSubmitButtonDisabled,
+                  ]}
                   onPress={handleImport}
+                  disabled={importCode.length < SESSION_CODE_LENGTH}
                 >
                   <Text style={styles.importModalButtonText}>取り込む</Text>
                 </TouchableOpacity>
@@ -667,17 +692,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  importCodeInput: {
+  codeBoxRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  codeBox: {
+    width: 42,
+    height: 54,
     borderWidth: 2,
     borderColor: '#ddd',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 12,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  codeBoxActive: {
+    borderColor: '#17a2b8',
+    backgroundColor: '#fff',
+  },
+  codeBoxText: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: '#1e3c72',
     fontFamily: 'monospace',
-    minHeight: 100,
-    maxHeight: 200,
-    textAlignVertical: 'top',
-    marginBottom: 16,
+  },
+  // 枠の上に重ねた透明な入力欄（タップでキーボードを開く）
+  codeHiddenInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0,
   },
   importModalButtons: {
     gap: 8,
@@ -689,6 +737,9 @@ const styles = StyleSheet.create({
   },
   importModalSubmitButton: {
     backgroundColor: '#17a2b8',
+  },
+  importModalSubmitButtonDisabled: {
+    opacity: 0.5,
   },
   importModalButtonText: {
     color: '#fff',
