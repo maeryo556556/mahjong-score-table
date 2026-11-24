@@ -222,12 +222,15 @@ export const hasPlayerNamesChanged = (currentNames: readonly string[], newNames:
 
 // ---------- 過去のゲームの保存上限とお気に入り（Issue #60） ----------
 
-// Issue #60 本文の「50件」は、Issue コメントの確定値（通常100件・お気に入り20件）に読み替えている
+// Issue #60 本文の「50件」は、Issue コメントの確定値（お気に入りを含めて合計100件・お気に入りは最大20件）に読み替えている
 
-/** お気に入り以外の終了済みゲームの保存上限。お気に入りは上限に数えず、自動削除もしない */
+/** 終了済みゲームの保存上限（お気に入りを含む合計）。超えたら古い通常データ（お気に入り以外）から自動で削除する */
 export const MAX_SAVED_GAMES = 100;
 
-/** お気に入りの上限。超える登録をすると古いお気に入りから自動で解除する（データは通常データとして残す） */
+/**
+ * お気に入りの上限。超える登録をすると古いお気に入りから自動で解除する（データは通常データとして残す）。
+ * お気に入りは最大20件なので、保存枠（100件）がお気に入りだけで埋まることはない。
+ */
 export const MAX_FAVORITE_GAMES = 20;
 
 export interface PrunableGame {
@@ -237,34 +240,27 @@ export interface PrunableGame {
 }
 
 /**
- * 保存上限を超えたために削除すべき終了済みゲームのIDを返す（古い順に削除対象とする）。
- * - お気に入りは対象外で、上限の件数にも数えない（新規ゲームの保存は常に行える）
- * - protectIds に含まれるゲーム（保存したばかりのゲームなど）は削除しない
- * 並びは created_at の降順（同時刻は id の降順）で新しいものから上限件数を残す。
+ * 保存上限を超えたために削除すべき終了済みゲームのIDを返す。
+ * - 上限はお気に入りを含めた合計件数に対して適用する
+ * - 削除するのは通常データ（お気に入り以外）のみで、古いもの（created_at の昇順、同時刻は id の昇順）から削除する
+ * - お気に入りと protectIds に含まれるゲーム（保存したばかりのゲームなど）は削除しない
+ * 削除できる通常データが足りない場合は、削除できる分だけを返す
+ * （お気に入りは最大20件のため、通常の上限100件ではこの状況は起こらない）。
  */
 export const selectGamesToPrune = (
   games: readonly PrunableGame[],
   limit: number = MAX_SAVED_GAMES,
   protectIds: readonly number[] = []
 ): number[] => {
+  const overflow = games.length - Math.max(0, limit);
+  if (overflow <= 0) return [];
   const protect = new Set(protectIds);
-  const candidates = games
-    .filter(g => !g.favorite)
+  return games
+    .filter(g => !g.favorite && !protect.has(g.id))
     .slice()
-    .sort((a, b) => (b.created_at - a.created_at) || (b.id - a.id));
-  // 保護対象は必ず残すため、上限の枠を先に確保する
-  const protectedCount = candidates.filter(g => protect.has(g.id)).length;
-  let remaining = Math.max(0, limit - protectedCount);
-  const toDelete: number[] = [];
-  for (const g of candidates) {
-    if (protect.has(g.id)) continue;
-    if (remaining > 0) {
-      remaining--;
-    } else {
-      toDelete.push(g.id);
-    }
-  }
-  return toDelete;
+    .sort((a, b) => (a.created_at - b.created_at) || (a.id - b.id))
+    .slice(0, overflow)
+    .map(g => g.id);
 };
 
 export interface FavoriteGame {

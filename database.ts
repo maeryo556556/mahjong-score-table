@@ -194,7 +194,7 @@ export const getCurrentGame = () => {
 // ゲーム終了
 export const finishGame = (gameId: number) => {
   getDb().runSync('UPDATE games SET finished = 1 WHERE id = ?', [gameId]);
-  // 保存上限（お気に入り以外100件）を超えたら古いものから削除する（Issue #60）
+  // 保存上限（お気に入りを含めて合計100件）を超えたら古い通常データから削除する（Issue #60）
   // 削除に失敗しても保存自体は成功させる
   try {
     pruneOldGames([gameId]);
@@ -204,11 +204,12 @@ export const finishGame = (gameId: number) => {
 };
 
 // ---- 過去のゲームの保存上限とお気に入り（Issue #60） ----
-// 通常（お気に入り以外）は最大100件、お気に入りは最大20件で通常枠に数えない。
+// 保存上限はお気に入りを含めて合計100件。超えた分は古い通常データ（お気に入り以外）から削除し、
+// お気に入り（最大20件）は自動削除の対象外とする。
 // 削除は保存時（ゲーム終了・共有ゲームの取り込み）にのみ行い、保存したばかりのゲームは削除しない。
-// そのためお気に入りの件数に関わらず、新規ゲームの保存は常に成功する。
+// お気に入りは最大20件のため保存枠がお気に入りだけで埋まることはなく、新規ゲームの保存は常に成功する。
 
-// 保存上限を超えた古い終了済みゲーム（お気に入り以外）を削除する。削除した件数を返す
+// 保存上限（合計件数）を超えた分を、古い通常データ（お気に入り以外）から削除する。削除した件数を返す
 // protectIds: 保存したばかりのゲームなど、削除してはいけないゲーム
 export const pruneOldGames = (protectIds: number[] = [], limit: number = MAX_SAVED_GAMES): number => {
   const games = getDb().getAllSync<{ id: number; created_at: number; favorite: number }>(
@@ -480,7 +481,7 @@ export const importShareData = (
     });
   });
 
-  // 保存上限（お気に入り以外100件）を超えたら古いものから削除する（Issue #60）
+  // 保存上限（お気に入りを含めて合計100件）を超えたら古い通常データから削除する（Issue #60）
   // 削除に失敗しても保存自体は成功させる
   try {
     pruneOldGames([gameId]);

@@ -281,29 +281,38 @@ describe('selectGamesToPrune（保存上限: Issue #60）', () => {
       favorite: favoriteIds.includes(i + 1) ? 1 : 0,
     }));
 
-  it('上限は通常100件・お気に入り20件', () => {
+  it('上限はお気に入りを含めて合計100件・お気に入りは最大20件', () => {
     expect(MAX_SAVED_GAMES).toBe(100);
     expect(MAX_FAVORITE_GAMES).toBe(20);
   });
 
   it('上限以内なら何も削除しない', () => {
     expect(selectGamesToPrune(makeGames(100))).toEqual([]);
+    expect(selectGamesToPrune(makeGames(100, [1, 2, 3]))).toEqual([]);
   });
 
   it('上限を超えたら古いものから削除する', () => {
-    expect(selectGamesToPrune(makeGames(102))).toEqual([2, 1]);
+    expect(selectGamesToPrune(makeGames(102))).toEqual([1, 2]);
   });
 
-  it('お気に入りは削除対象外で、上限の件数にも数えない', () => {
-    // 古い2件がお気に入り: お気に入り以外は100件ちょうどなので削除なし
-    expect(selectGamesToPrune(makeGames(102, [1, 2]))).toEqual([]);
-    // お気に入り以外が101件 → お気に入りを飛ばして最も古い通常ゲームを削除
-    expect(selectGamesToPrune(makeGames(103, [1, 2]))).toEqual([3]);
+  it('お気に入りも合計件数に数え、削除は古い通常データから行う（お気に入りは対象外）', () => {
+    // 合計102件（うち古い2件がお気に入り）→ 2件超過。お気に入りを飛ばして古い通常データ2件を削除
+    expect(selectGamesToPrune(makeGames(102, [1, 2]))).toEqual([3, 4]);
+    // お気に入り20件を含む合計101件 → 最も古い通常データ1件を削除し、合計100件になる
+    const favorites = Array.from({ length: 20 }, (_, i) => i + 1);
+    const games = makeGames(101, favorites);
+    const pruned = selectGamesToPrune(games);
+    expect(pruned).toEqual([21]);
+    expect(games.length - pruned.length).toBe(100);
+    expect(pruned.some(id => favorites.includes(id))).toBe(false);
   });
 
-  it('お気に入りが多くても新規ゲームの保存（保護対象）は削除しない', () => {
-    const games = makeGames(5, [1, 2, 3, 4]);
-    expect(selectGamesToPrune(games, 1, [5])).toEqual([]);
+  it('お気に入りが最大20件あっても新規ゲーム（保護対象）は保存でき、合計は上限に収まる', () => {
+    const favorites = Array.from({ length: 20 }, (_, i) => i + 1);
+    const games = makeGames(101, favorites); // id: 101 が保存したばかりのゲーム
+    const pruned = selectGamesToPrune(games, MAX_SAVED_GAMES, [101]);
+    expect(pruned).not.toContain(101);
+    expect(games.length - pruned.length).toBe(MAX_SAVED_GAMES);
   });
 
   it('保護対象は古くても残し、その分ほかの古いものを削除する', () => {

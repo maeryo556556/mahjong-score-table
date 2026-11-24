@@ -165,7 +165,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.limitNote}>
-            ☆をタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。お気に入り以外は新しい順に{MAX_SAVED_GAMES}件まで保存され、超えると古いものから自動で削除されます。
+            ☆をタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。保存はお気に入りを含めて{MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。
           </Text>
           {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58） */}
           {joinedSessions.map(session => (
