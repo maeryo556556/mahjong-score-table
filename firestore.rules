@@ -12,7 +12,7 @@ service cloud.firestore {
       allow list: if false;
 
       allow create: if request.auth != null
-        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && code.matches('^[0-9]{6}$')
         && request.resource.data.keys().hasOnly(['data', 'hostUid', 'createdAt', 'updatedAt', 'expiresAt', 'ended'])
         && request.resource.data.hostUid == request.auth.uid
         && request.resource.data.data is string

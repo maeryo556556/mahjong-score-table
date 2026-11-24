@@ -54,28 +54,29 @@ function handleImportInput(input: string): ImportResult {
 describe('ディープリンク', () => {
   it('セッションリンクはセッション参加に回る', () => {
     const deps = { joinLiveSession: jest.fn() };
-    handleDeepLink(buildSessionUrl('ABC234'), deps);
-    expect(deps.joinLiveSession).toHaveBeenCalledWith('ABC234');
+    handleDeepLink(buildSessionUrl('123456'), deps);
+    expect(deps.joinLiveSession).toHaveBeenCalledWith('123456');
   });
 
-  it('小文字コードのセッションリンクも正規化して参加する', () => {
+  it('ハイフン入りコードのセッションリンクも正規化して参加する', () => {
     const deps = { joinLiveSession: jest.fn() };
-    handleDeepLink('mahjong-score://live?code=abc234', deps);
-    expect(deps.joinLiveSession).toHaveBeenCalledWith('ABC234');
+    handleDeepLink('mahjong-score://live?code=123-456', deps);
+    expect(deps.joinLiveSession).toHaveBeenCalledWith('123456');
   });
 
   it('廃止した静的取り込みリンク（import?code=…）は何もしない', () => {
     const deps = { joinLiveSession: jest.fn() };
     handleDeepLink(makeLegacyStaticUrl(makeLegacyStaticCode()), deps);
-    handleDeepLink('mahjong-score://import?code=ABC234', deps);
+    handleDeepLink('mahjong-score://import?code=123456', deps);
     expect(deps.joinLiveSession).not.toHaveBeenCalled();
   });
 
   it('無関係なURL・不正なコードは何もしない', () => {
     const deps = { joinLiveSession: jest.fn() };
     handleDeepLink('https://example.com', deps);
-    handleDeepLink('mahjong-score://other?code=ABC234', deps);
+    handleDeepLink('mahjong-score://other?code=123456', deps);
     handleDeepLink('mahjong-score://live?code=XX', deps);
+    handleDeepLink('mahjong-score://live?code=ABC234', deps);
     handleDeepLink('mahjong-score://live', deps);
     handleDeepLink('', deps);
     expect(deps.joinLiveSession).not.toHaveBeenCalled();
@@ -89,8 +90,8 @@ describe('取り込み画面の入力', () => {
   });
 
   it('セッションコード・セッションリンクは参加', () => {
-    expect(handleImportInput('abc-234')).toEqual({ type: 'join', code: 'ABC234' });
-    expect(handleImportInput(buildSessionUrl('ABC234'))).toEqual({ type: 'join', code: 'ABC234' });
+    expect(handleImportInput('123-456')).toEqual({ type: 'join', code: '123456' });
+    expect(handleImportInput(buildSessionUrl('123456'))).toEqual({ type: 'join', code: '123456' });
   });
 
   it('静的共有コード・静的共有リンクはエラー', () => {
@@ -101,6 +102,6 @@ describe('取り込み画面の入力', () => {
 
   it('その他の文字列はエラー', () => {
     expect(handleImportInput('hello world')).toEqual({ type: 'error' });
-    expect(handleImportInput('ABC23')).toEqual({ type: 'error' });
+    expect(handleImportInput('12345')).toEqual({ type: 'error' });
   });
 });
