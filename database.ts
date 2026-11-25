@@ -246,6 +246,17 @@ export const setGameFavorite = (
   return 'added';
 };
 
+/**
+ * 保存されているゲームの件数（Issue #81）。
+ * total: 終了済み＋中断中の全ゲーム数、favorite: お気に入りのゲーム数
+ */
+export const getSavedGameCounts = (): { total: number; favorite: number } => {
+  const row = getDb().getFirstSync<{ total: number; favorite: number | null }>(
+    'SELECT COUNT(*) AS total, SUM(CASE WHEN favorite = 1 THEN 1 ELSE 0 END) AS favorite FROM games'
+  );
+  return { total: row?.total ?? 0, favorite: row?.favorite ?? 0 };
+};
+
 // ゲームをIDで取得
 export const getGameById = (gameId: number) => {
   const result = getDb().getFirstSync<{ id: number; player_count: number; start_date: string; finished: number }>(
@@ -650,17 +661,6 @@ export const findImportedGameBySessionCode = (code: string): ImportedGameRef | n
         ? { code: row.live_session_code, expiresAt: row.live_session_expires_at }
         : null,
   };
-};
-
-// ゲームデータクリア
-export const clearAllData = () => {
-  getDb().withTransactionSync(() => {
-    getDb().runSync('DELETE FROM joined_sessions');
-    getDb().runSync('DELETE FROM chips');
-    getDb().runSync('DELETE FROM scores');
-    getDb().runSync('DELETE FROM game_players');
-    getDb().runSync('DELETE FROM games');
-  });
 };
 
 export default getDb;

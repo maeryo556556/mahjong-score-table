@@ -18,7 +18,6 @@ import {
   purgeExpiredJoinedSessions,
   getSavedLiveSessionCodes,
   setGameFavorite,
-  clearAllData,
 } from '../database';
 import {
   MAX_SAVED_GAMES,
@@ -179,26 +178,6 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
       return;
     }
     refreshGames();
-  };
-
-  // 保存データのクリア（Issue #60: セットアップ画面から移動）
-  const handleClearData = () => {
-    Alert.alert(
-      'データ削除',
-      '保存されているすべてのゲームデータ（お気に入り・中断中のゲームを含む）を削除しますか？\nこの操作は取り消せません。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: () => {
-            clearAllData();
-            refreshGames();
-            Alert.alert('完了', 'データをクリアしました');
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -362,12 +341,6 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
             })
           )}
 
-          {/* 保存データのクリア（Issue #60: セットアップ画面から移動） */}
-          {!selectionMode && (games.length > 0 || joinedSessions.length > 0) && (
-            <TouchableOpacity style={styles.clearButton} onPress={handleClearData} accessibilityRole="button">
-              <Text style={styles.clearButtonText}>保存データをクリア</Text>
-            </TouchableOpacity>
-          )}
         </ScrollView>
 
         {/* 複数選択モードの操作バー（Issue #74） */}
@@ -523,6 +496,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingTop: 0,
+    paddingBottom: 24,
   },
   emptyCard: {
     backgroundColor: '#fff',
@@ -615,19 +589,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     marginBottom: 12,
     lineHeight: 18,
-  },
-  clearButton: {
-    backgroundColor: '#dc3545',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  clearButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   gameCardBody: {
     flexDirection: 'row',

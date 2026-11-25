@@ -27,6 +27,7 @@ import {
   getJoinedSessions,
   getSavedLiveSessionCodes,
   findImportedGameBySessionCode,
+  getSavedGameCounts,
 } from '../database';
 import { buildDefaultPlayerNames, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import { TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
@@ -73,6 +74,7 @@ export default function SetupScreen({
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
+  const [gameCounts, setGameCounts] = useState<{ total: number; favorite: number } | null>(null);
   const [suspendedGames, setSuspendedGames] = useState<ReturnType<typeof getUnfinishedGames>>([]);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importCode, setImportCode] = useState('');
@@ -135,6 +137,12 @@ export default function SetupScreen({
     }
     setHasPastGames(finished.length > 0 || hasJoinedSessions);
     setSuspendedGames(getUnfinishedGames());
+    // 過去のゲーム件数・お気に入り件数（Issue #81）
+    try {
+      setGameCounts(getSavedGameCounts());
+    } catch {
+      // 読めなくても続行する（件数は表示しない）
+    }
     // 直近のゲームのプレイヤー名を初期値として入れておく（編集可能）
     try {
       const lastNames = getLastPlayerNames();
@@ -349,24 +357,29 @@ export default function SetupScreen({
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.card, styles.cardWithMarginTop]}>
-            <Text style={styles.sectionTitle}>過去のゲーム履歴管理</Text>
+          {/* 履歴まわりのボタン（Issue #81: カードを廃止し、取り込む→見るの順にボタンだけを並べる） */}
+          <View style={styles.historyButtons}>
+            <TouchableOpacity
+              style={[styles.startButton, styles.importButton]}
+              onPress={() => setShowImportModal(true)}
+            >
+              <Text style={styles.startButtonText}>ゲームを取り込む</Text>
+            </TouchableOpacity>
 
             {hasPastGames && (
               <TouchableOpacity
-                style={[styles.startButton, styles.secondaryButton]}
+                style={[styles.startButton, styles.secondaryButton, styles.buttonMarginTop]}
                 onPress={onViewPastGames}
               >
                 <Text style={styles.startButtonText}>過去のゲームを見る</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={[styles.startButton, styles.importButton, hasPastGames && styles.buttonMarginTop]}
-              onPress={() => setShowImportModal(true)}
-            >
-              <Text style={styles.startButtonText}>ゲームを取り込む</Text>
-            </TouchableOpacity>
+            {gameCounts && (
+              <Text style={styles.gameCountText}>
+                過去のゲーム {gameCounts.total}件（お気に入り {gameCounts.favorite}件）
+              </Text>
+            )}
           </View>
         </ScrollView>
 
@@ -705,6 +718,15 @@ const styles = StyleSheet.create({
   },
   importButton: {
     backgroundColor: '#17a2b8',
+  },
+  historyButtons: {
+    marginTop: 16,
+  },
+  gameCountText: {
+    marginTop: 10,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
