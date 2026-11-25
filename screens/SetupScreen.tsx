@@ -14,7 +14,7 @@ import {
   Image,
   useWindowDimensions,
 } from 'react-native';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -44,6 +44,8 @@ import type { ImportedGameRef } from '../liveSession';
 // 使い方のモーダル（Issue #72）
 const GUIDE_PADDING = 18;
 const GUIDE_IMAGE_ASPECT = 3 / 4; // assets/guide/ の画像（高さ / 幅）
+// 使い方モーダルの外枠の太さ。FlatList の実表示幅はモーダル幅からこの左右ぶんを引いた幅になる（Issue #92）
+const GUIDE_BORDER_WIDTH = 3;
 // ページごとのアクセント色と淡い背景色（generate_assets.py の GUIDE_THEMES と揃える。Issue #74）
 const GUIDE_THEMES = [
   { accent: '#ff7043', soft: '#fff3e0' },
@@ -88,6 +90,12 @@ export default function SetupScreen({
   const guideWidth = Math.min(windowWidth - 48, 360, Math.max(280, windowHeight * 0.6));
   // 画像は少し内側に収めて、モーダル全体を正方形に近づける
   const guideImageWidth = Math.round((guideWidth - 2 * GUIDE_PADDING) * 0.9);
+  // 1ページの幅は FlatList の実際の表示幅に合わせる（Issue #92）。
+  // モーダルの外枠（borderWidth）のぶんだけ guideWidth より狭くなるため、ページ幅を guideWidth にすると
+  // pagingEnabled のスクロール量（＝表示幅）とページ幅が食い違い、めくるたびに中身がズレていく。
+  // 実測値（onLayout）があればそれを使い、測定前は外枠を差し引いた計算値を使う。
+  const [measuredGuidePageWidth, setMeasuredGuidePageWidth] = useState<number | null>(null);
+  const guidePageWidth = measuredGuidePageWidth ?? guideWidth - 2 * GUIDE_BORDER_WIDTH;
   const importCodeInputRef = useRef<TextInput>(null);
 
   // 使い方ガイド（Issue #58: リアルタイム共有・閲覧モード・6桁のセッションコードに合わせて更新）
@@ -122,9 +130,23 @@ export default function SetupScreen({
 
   // スワイプでページが変わったらインジケーターを合わせる（半分以上めくった時点で切り替える）
   const handleGuideScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const page = Math.max(0, Math.min(guideSlides.length - 1, Math.round(e.nativeEvent.contentOffset.x / guideWidth)));
+    const page = Math.max(0, Math.min(guideSlides.length - 1, Math.round(e.nativeEvent.contentOffset.x / guidePageWidth)));
     if (page !== guideIndex) setGuideIndex(page);
   };
+
+  // FlatList の実表示幅を測ってページ幅に使う（Issue #92）
+  const handleGuideListLayout = (e: LayoutChangeEvent) => {
+    const width = e.nativeEvent.layout.width;
+    if (width > 0 && width !== measuredGuidePageWidth) setMeasuredGuidePageWidth(width);
+  };
+
+  // ページ幅が変わったとき（画面回転など）は表示中のページの先頭に位置を合わせ直す
+  useEffect(() => {
+    if (!showGuide) return;
+    guideListRef.current?.scrollToOffset({ offset: guidePageWidth * guideIndex, animated: false });
+    // guideIndex の変化ではスクロールし直さない（スワイプ中の位置を乱さないため）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guidePageWidth, showGuide]);
 
   useEffect(() => {
     const finished = getFinishedGames();
@@ -464,12 +486,13 @@ export default function SetupScreen({
                 bounces={false}
                 showsHorizontalScrollIndicator={false}
                 keyExtractor={(_, i) => String(i)}
-                getItemLayout={(_, index) => ({ length: guideWidth, offset: guideWidth * index, index })}
+                getItemLayout={(_, index) => ({ length: guidePageWidth, offset: guidePageWidth * index, index })}
+                onLayout={handleGuideListLayout}
                 onScroll={handleGuideScroll}
                 scrollEventThrottle={16}
                 onMomentumScrollEnd={handleGuideScroll}
                 renderItem={({ item, index }) => (
-                  <View style={[styles.guideSlide, { width: guideWidth }]}>
+                  <View style={[styles.guideSlide, { width: guidePageWidth }]}>
                     <View style={[styles.guideTitleBadge, { backgroundColor: guideTheme(index).accent }]}>
                       <Text style={styles.guideTitle}>{item.title}</Text>
                     </View>
@@ -819,7 +842,7 @@ const styles = StyleSheet.create({
   guideModalContent: {
     backgroundColor: '#fff',
     borderRadius: 22,
-    borderWidth: 3,
+    borderWidth: GUIDE_BORDER_WIDTH,
     borderColor: '#fff',
     paddingTop: 16,
     paddingBottom: 14,
