@@ -46,6 +46,9 @@ const GUIDE_PADDING = 18;
 const GUIDE_IMAGE_ASPECT = 3 / 4; // assets/guide/ の画像（高さ / 幅）
 // 使い方モーダルの外枠の太さ。FlatList の実表示幅はモーダル幅からこの左右ぶんを引いた幅になる（Issue #92）
 const GUIDE_BORDER_WIDTH = 3;
+// 画面幅がこれ以上の端末（iPad など）では使い方モーダルを大きく表示する（Issue #97）
+const GUIDE_WIDE_SCREEN_MIN = 600;
+const GUIDE_WIDE_MAX_WIDTH = 620;
 // ページごとのアクセント色と淡い背景色（generate_assets.py の GUIDE_THEMES と揃える。Issue #74）
 const GUIDE_THEMES = [
   { accent: '#ff7043', soft: '#fff3e0' },
@@ -87,7 +90,10 @@ export default function SetupScreen({
   const logoWidth = Math.min(340, Math.max(200, windowWidth - 32 - 2 * 46));
   const guideListRef = useRef<FlatList>(null);
   // 使い方のモーダル（Issue #72）: 小さめの正方形に近い比率。1ページの幅＝モーダルの幅でスワイプでめくる
-  const guideWidth = Math.min(windowWidth - 48, 360, Math.max(280, windowHeight * 0.6));
+  // 幅の上限はスマートフォンでは 360px、iPad など画面幅 600px 以上では 620px かつ画面幅の 75% まで広げる（Issue #97）。
+  // ページ幅は下の FlatList 実測値（Issue #92）から決まるので、ここでモーダル幅を変えてもスワイプはズレない。
+  const guideMaxWidth = windowWidth >= GUIDE_WIDE_SCREEN_MIN ? Math.min(GUIDE_WIDE_MAX_WIDTH, windowWidth * 0.75) : 360;
+  const guideWidth = Math.round(Math.min(windowWidth - 48, guideMaxWidth, Math.max(280, windowHeight * 0.6)));
   // 画像は少し内側に収めて、モーダル全体を正方形に近づける
   const guideImageWidth = Math.round((guideWidth - 2 * GUIDE_PADDING) * 0.9);
   // 1ページの幅は FlatList の実際の表示幅に合わせる（Issue #92）。
