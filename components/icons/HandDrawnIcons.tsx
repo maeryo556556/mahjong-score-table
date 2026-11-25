@@ -250,7 +250,12 @@ export function TileFanIcon({ color = '#3e2723', fill = '#2e7d32', ...rest }: Ha
 // 順位メダル
 // ---------------------------------------------------------------------------
 
-const MEDAL_COIN = '#f6c445';
+/** 順位ごとのコインの色（1位: 金、2位: 銀、3位: 銅） */
+const MEDAL_COINS: Record<1 | 2 | 3, string> = {
+  1: '#f6c445',
+  2: '#cfd8dc',
+  3: '#d79a62',
+};
 const MEDAL_RIBBON_LEFT = '#e05a5a';
 const MEDAL_RIBBON_RIGHT = '#4a7fd4';
 
@@ -269,7 +274,7 @@ const MEDAL_NUMERALS: Record<1 | 2 | 3, Shape[]> = {
   ],
 };
 
-/** 赤と青のリボンが付いた定番メダル。金色の円に順位数字 */
+/** 赤と青のリボンが付いた定番メダル。順位ごとの色の円に順位数字 */
 const medalShapes = (rank: 1 | 2 | 3): Shape[] => {
   const left: Point[] = [[4.6, 1.6], [9.2, 1.6], [13.2, 9.8], [9.4, 10.8]];
   const right: Point[] = [[19.4, 1.6], [14.8, 1.6], [10.8, 9.8], [14.6, 10.8]];
@@ -282,7 +287,7 @@ const medalShapes = (rank: 1 | 2 | 3): Shape[] => {
     // リボンの中央線
     { kind: 'line', points: [[7, 2.6], [10.6, 9.6]], width: 0.45, color: '#fff' },
     { kind: 'line', points: [[17, 2.6], [13.4, 9.6]], width: 0.45, color: '#fff' },
-    // 金色のコイン
+    // コイン（色は順位ごとに MedalIcon の fill で切り替える）
     { kind: 'fillCircle', cx: 12, cy: 15.6, r: 6.6, color: 'fill' },
     { kind: 'circle', cx: 12, cy: 15.6, r: 6.6 },
     { kind: 'circle', cx: 12, cy: 15.6, r: 4.8, width: 0.55 },
@@ -296,14 +301,16 @@ const MEDAL_SHAPES: Record<1 | 2 | 3, Shape[]> = {
   3: medalShapes(3),
 };
 
-/** 順位メダル（1〜3位） */
+/** 順位メダル（1〜3位）。コインは 1位=金、2位=銀、3位=銅 */
 export function MedalIcon({
   rank,
   color = '#4e342e',
-  fill = MEDAL_COIN,
+  fill,
   ...rest
 }: HandDrawnIconProps & { rank: 1 | 2 | 3 }) {
-  return <SketchIcon shapes={MEDAL_SHAPES[rank]} seed={10 + rank} color={color} fill={fill} {...rest} />;
+  return (
+    <SketchIcon shapes={MEDAL_SHAPES[rank]} seed={10 + rank} color={color} fill={fill ?? MEDAL_COINS[rank]} {...rest} />
+  );
 }
 
 // ---------------------------------------------------------------------------
