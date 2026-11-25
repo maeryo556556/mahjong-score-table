@@ -6,6 +6,7 @@ import {
   formatTime,
   selectGamesToPrune,
   canAddFavorite,
+  calcFinalScores,
   MAX_SAVED_GAMES,
   MAX_FAVORITE_GAMES,
 } from './utils';
@@ -277,10 +278,21 @@ export const getFinishedGames = () => {
       'SELECT COUNT(DISTINCT hanchan) as count FROM scores WHERE game_id = ?',
       [game.id]
     );
+    // 最終スコア（スコア合計 + チップ合計: Issue #78）。プレイヤーごとに集計してから合算する
+    const scoreTotals = getDb().getAllSync<{ player_name: string; point: number }>(
+      'SELECT player_name, SUM(point) as point FROM scores WHERE game_id = ? GROUP BY player_name',
+      [game.id]
+    );
+    const chipTotals = getDb().getAllSync<{ player_name: string; chip_point: number }>(
+      'SELECT player_name, SUM(chip_point) as chip_point FROM chips WHERE game_id = ? GROUP BY player_name',
+      [game.id]
+    );
+    const playerNames = players.map(p => p.player_name);
     return {
       ...game,
-      playerNames: players.map(p => p.player_name),
+      playerNames,
       hanchanCount: hanchanCount?.count || 0,
+      finalScores: calcFinalScores(playerNames, scoreTotals, chipTotals),
     };
   });
 };

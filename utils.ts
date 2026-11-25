@@ -285,12 +285,21 @@ export const toggleSelection = (selected: readonly number[], id: number): number
   selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
 
 /**
- * 選択できるゲームの ID。ホストとして共有中（進行中）のゲームは一覧から削除させないため除く。
+ * そのゲームを選択できるか。お気に入り（favorite = 1）のゲームは誤って消さないよう選択させない（Issue #78）。
+ * ホストとして共有中（進行中）のゲームも一覧から削除させないため選択させない。
+ */
+export const isGameSelectable = (
+  game: SelectableGame,
+  excludeIds: ReadonlySet<number> = new Set(),
+): boolean => game.favorite !== 1 && !excludeIds.has(game.id);
+
+/**
+ * 選択できるゲームの ID（お気に入りと、excludeIds に含まれるホスト共有中のゲームを除く）。
  */
 export const selectableGameIds = (
   games: readonly SelectableGame[],
   excludeIds: ReadonlySet<number> = new Set(),
-): number[] => games.filter(g => !excludeIds.has(g.id)).map(g => g.id);
+): number[] => games.filter(g => isGameSelectable(g, excludeIds)).map(g => g.id);
 
 /** 選択できるゲームがすべて選択されているか（選択できるゲームが無いときは false） */
 export const isAllSelected = (selected: readonly number[], selectableIds: readonly number[]): boolean =>
@@ -310,18 +319,31 @@ export const pruneSelection = (selected: readonly number[], selectableIds: reado
   return selected.filter(id => ids.has(id));
 };
 
-/** 選択中のゲームのうちお気に入りの件数 */
-export const countSelectedFavorites = (selected: readonly number[], games: readonly SelectableGame[]): number => {
-  const ids = new Set(selected);
-  return games.filter(g => ids.has(g.id) && g.favorite === 1).length;
-};
+/** まとめて削除の確認ダイアログの本文 */
+export const buildBulkDeleteMessage = (count: number): string =>
+  `選択した${count}件のゲームを削除しますか？\nこの操作は取り消せません。`;
 
-/** まとめて削除の確認ダイアログの本文（件数と、お気に入りが含まれる場合はその旨） */
-export const buildBulkDeleteMessage = (count: number, favoriteCount: number): string => {
-  const lines = [`選択した${count}件のゲームを削除しますか？`];
-  if (favoriteCount > 0) {
-    lines.push(`お気に入り登録済みのゲームが${favoriteCount}件含まれています。`);
-  }
-  lines.push('この操作は取り消せません。');
-  return lines.join('\n');
-};
+// ---- 過去のゲーム一覧の最終スコア（Issue #78） ----
+
+export interface PlayerFinalScore {
+  playerName: string;
+  total: number;
+}
+
+/**
+ * プレイヤーごとの最終スコア（スコア合計 + チップ合計）。ゲーム画面の総合スコア（SummaryCards）と同じ計算。
+ * playerNames の並び順で返し、記録の無いプレイヤーは 0 とする。
+ */
+export const calcFinalScores = (
+  playerNames: readonly string[],
+  scores: readonly { player_name: string; point: number }[],
+  chips: readonly { player_name: string; chip_point: number }[],
+): PlayerFinalScore[] =>
+  playerNames.map(playerName => {
+    const scoreTotal = scores.filter(s => s.player_name === playerName).reduce((sum, s) => sum + s.point, 0);
+    const chipTotal = chips.filter(c => c.player_name === playerName).reduce((sum, c) => sum + c.chip_point, 0);
+    return { playerName, total: scoreTotal + chipTotal };
+  });
+
+/** スコアの符号付き表示（プラスは「+」を付ける。総合スコアの表示と同じ） */
+export const formatSignedScore = (value: number): string => `${value > 0 ? '+' : ''}${value}`;
