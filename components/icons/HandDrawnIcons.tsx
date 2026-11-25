@@ -2,6 +2,7 @@
 // すべての線を sketch.ts の揺らぎ付きパスで描き、さらに細く薄い「二度書き」の線を重ねて
 // ラフなペン画の風合いに統一している。塗りは線から少しずらして色鉛筆のはみ出し感を出す。
 // Issue #66: 候補ボードからユーザーが選んだデザインに各アイコンを描き直した（TileFanIcon を除く）。
+// Issue #67: TileFanIcon を金の五筒（1枚の牌）に描き直した。
 import React, { useMemo } from 'react';
 import { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
@@ -212,37 +213,37 @@ export function TileIcon({ color = '#3e2723', fill = '#43a047', ...rest }: HandD
 }
 
 // ---------------------------------------------------------------------------
-// 扇状に重ねた2枚の牌（3人麻雀）
+// 金の五筒（3人麻雀）  Issue #67: 扇状の2枚牌から B案のデザインに変更
 // ---------------------------------------------------------------------------
 
-const fanTile = (deg: number, dx: number): Point[] =>
-  rect(6 + dx, 3, 16 + dx, 18.5).map(p => rotate(p, [11 + dx, 21], deg));
+const PIN_GOLD = '#f6c445';
+const PIN_RING = '#a8780a';
+const PIN_R = 2.3;
+const PIN_INNER_R = 1.35;
 
-const FAN_BACK = fanTile(-14, -1.5);
-const FAN_FRONT = fanTile(12, 2.5);
-const backPivot: Point = [9.5, 21];
-const frontPivot: Point = [13.5, 21];
-
-const TILE_FAN_SHAPES: Shape[] = [
-  // 奥の牌
-  { kind: 'fillPoly', points: FAN_BACK, color: TILE_FACE },
-  { kind: 'line', points: FAN_BACK, closed: true, width: 0.95 },
-  // 奥の牌の模様：斜めに並ぶ3つの点
-  ...([[7.6, 6.6], [9.6, 10.6], [11.6, 14.6]] as Point[]).map(
-    (p): Shape => ({ kind: 'fillCircle', cx: rotate(p, backPivot, -14)[0], cy: rotate(p, backPivot, -14)[1], r: 1, color: 'fill' }),
-  ),
-  // 手前の牌
-  { kind: 'fillPoly', points: FAN_FRONT, color: TILE_FACE },
-  { kind: 'line', points: FAN_FRONT, closed: true },
-  // 手前の牌の模様：節のある2本の棒
-  { kind: 'line', points: [rotate([12.4, 6], frontPivot, 12), rotate([12.4, 15.5], frontPivot, 12)], width: 0.85, color: 'fill' },
-  { kind: 'line', points: [rotate([16, 6], frontPivot, 12), rotate([16, 15.5], frontPivot, 12)], width: 0.85, color: 'fill' },
-  { kind: 'line', points: [rotate([11.4, 10.7], frontPivot, 12), rotate([13.4, 10.7], frontPivot, 12)], width: 0.7, color: 'fill' },
-  { kind: 'line', points: [rotate([15, 10.7], frontPivot, 12), rotate([17, 10.7], frontPivot, 12)], width: 0.7, color: 'fill' },
+/** 五筒の丸の位置（四隅＋中央の「五」の形） */
+const FIVE_PIN_CENTERS: Point[] = [
+  [8.2, 6.6],
+  [15, 6.6],
+  [11.6, 11.6],
+  [8.2, 16.6],
+  [15, 16.6],
 ];
 
-/** 扇状に重ねた牌（3人麻雀） */
-export function TileFanIcon({ color = '#3e2723', fill = '#2e7d32', ...rest }: HandDrawnIconProps) {
+const TILE_FAN_SHAPES: Shape[] = [
+  // 白〜クリーム色の牌1枚
+  { kind: 'fillPoly', points: rect(4.6, 2.6, 18.6, 20.6), color: TILE_FACE },
+  { kind: 'line', points: rect(4.4, 2.6, 18.8, 20.8), closed: true },
+  // 金色の丸（塗り）＋濃い金の二重リング
+  ...FIVE_PIN_CENTERS.flatMap(([cx, cy]): Shape[] => [
+    { kind: 'fillCircle', cx, cy, r: PIN_R, color: 'fill' },
+    { kind: 'circle', cx, cy, r: PIN_R, width: 0.42, color: PIN_RING },
+    { kind: 'circle', cx, cy, r: PIN_INNER_R, width: 0.28, color: PIN_RING },
+  ]),
+];
+
+/** 金の五筒の牌（3人麻雀）。名前は互換のため TileFanIcon のまま */
+export function TileFanIcon({ color = '#3e2723', fill = PIN_GOLD, ...rest }: HandDrawnIconProps) {
   return <SketchIcon shapes={TILE_FAN_SHAPES} seed={2} color={color} fill={fill} {...rest} />;
 }
 
