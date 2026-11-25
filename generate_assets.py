@@ -886,7 +886,7 @@ def header_button(sc, x, y, w, h, label, fill, fg=WHITE, outline=None, size=14):
     sc.text(x + w / 2, y + h / 2, label, size, fg, True, 'mm')
 
 
-def back_header(sc, y, title, right=None, fg=WHITE, back_fill=WHITE_A(0.2), title_size=24):
+def back_header(sc, y, title, right=None, fg=WHITE, back_fill=WHITE_A(0.2), title_size=24, right_min_w=0):
     """← 戻る | タイトル | 右側。ヘッダー下端の y を返す。"""
     bw = sc.text_w('← 戻る', 14) + 24
     h = 34
@@ -895,7 +895,7 @@ def back_header(sc, y, title, right=None, fg=WHITE, back_fill=WHITE_A(0.2), titl
     sc.text(sc.wdp / 2, y + hh / 2, title, title_size, fg, True, 'mm')
     if right:
         label, fill, rfg = right
-        rw = sc.text_w(label, 14) + 24
+        rw = max(sc.text_w(label, 14) + 24, right_min_w)
         header_button(sc, sc.wdp - PAD - rw, y + (hh - 30) / 2, rw, 30, label, fill, rfg)
     return y + hh
 
@@ -1295,14 +1295,16 @@ def draw_setup_screen(sc):
     sc.text(sc.wdp / 2, cy + 23.5, 'ゲーム開始', 16, WHITE, True, 'mm')
     y += h + 16
 
-    # 過去のゲーム履歴管理
-    h2 = 20 + 48 + 47 + 8 + 47 + 20
-    sc.card(x, y, w, h2)
-    cy = section_title(sc, x + 20, y + 20, inner, '過去のゲーム履歴管理', size=18, mb=16)
-    for label, fill in (('過去のゲームを見る', GRAY_TEXT), ('ゲームを取り込む', TEAL)):
-        sc.rect(x + 20, cy, inner, 47, 6, fill=fill)
-        sc.text(sc.wdp / 2, cy + 23.5, label, 16, WHITE, True, 'mm')
-        cy += 47 + 8
+    # 履歴まわりのボタン（Issue #81: カードを廃止し、取り込む→見るの順にボタンだけを並べる）
+    for label, fill in (('ゲームを取り込む', TEAL), ('過去のゲームを見る', GRAY_TEXT)):
+        sc.rect(x, y, w, 47, 6, fill=fill)
+        sc.text(sc.wdp / 2, y + 23.5, label, 16, WHITE, True, 'mm')
+        y += 47 + 8
+    # 過去のゲーム件数・お気に入り件数（一覧のモックアップと数をそろえる）
+    saved = [g for g in PAST_GAMES if not g[6]]
+    n_fav = sum(1 for g in saved if g[4])
+    sc.text(sc.wdp / 2, y - 8 + 10 + 7.5, f"過去のゲーム {len(saved)}件（お気に入り {n_fav}件）",
+            12, WHITE_A(0.85), False, 'mm')
     return card_top
 
 
@@ -1408,17 +1410,35 @@ def generate_promo_share(output_path, config=IPHONE):
 
 
 PAST_GAMES = [
-    # (日付, 人数, プレイヤー, 半荘数, お気に入り, 取り込み, 閲覧中)
-    ('2026/11/24', 4, ['健太', '翔', '大輔', '拓海'], 2, None, False, True),
-    ('2026/11/22', 4, PLAYERS, 3, True, False, False),
-    ('2026/11/20', 3, ['太郎', '花子', '次郎'], 6, True, False, False),
-    ('2026/11/15', 4, ['Aさん', 'Bさん', 'Cさん', 'Dさん'], 5, False, True, False),
-    ('2026/11/08', 3, ['太郎', '美咲', '次郎'], 4, False, False, False),
-    ('2026/11/01', 4, PLAYERS, 6, True, False, False),
-    ('2026/10/25', 3, ['花子', '次郎', '美咲'], 3, False, False, False),
-    ('2026/10/18', 4, ['太郎', '花子', '健太', '翔'], 5, False, False, False),
-    ('2026/10/11', 4, PLAYERS, 4, False, False, False),
+    # (日付, 人数, プレイヤー, 半荘数, お気に入り, 取り込み, 閲覧中, 最終スコア)
+    # 最終スコアは終了済みゲームのみ（Issue #78）。閲覧中の対局は名前だけを表示する
+    ('2026/11/24', 4, ['健太', '翔', '大輔', '拓海'], 2, None, False, True, None),
+    ('2026/11/22', 4, PLAYERS, 3, True, False, False, [72, -18, 35, -89]),
+    ('2026/11/20', 3, ['太郎', '花子', '次郎'], 6, True, False, False, [120, -45, -75]),
+    ('2026/11/15', 4, ['Aさん', 'Bさん', 'Cさん', 'Dさん'], 5, False, True, False, [-32, 88, 14, -70]),
+    ('2026/11/08', 3, ['太郎', '美咲', '次郎'], 4, False, False, False, [-60, 95, -35]),
+    ('2026/11/01', 4, PLAYERS, 6, True, False, False, [148, -52, 0, -96]),
+    ('2026/10/25', 3, ['花子', '次郎', '美咲'], 3, False, False, False, [41, -63, 22]),
+    ('2026/10/18', 4, ['太郎', '花子', '健太', '翔'], 5, False, False, False, [-25, 64, -81, 42]),
+    ('2026/10/11', 4, PLAYERS, 4, False, False, False, [33, 57, -40, -50]),
 ]
+
+
+def final_score_lines(sc, names, scores, max_w):
+    """最終スコア（「名前 +120」）を flexWrap と同じように折り返す。行ごとの [(name, value), ...] を返す。"""
+    lines, cur, cur_w = [], [], 0
+    for name, v in zip(names, scores):
+        iw = sc.text_w(name + ' ', 14, False) + sc.text_w(fmt_signed(v), 14)
+        add = iw if not cur else 12 + iw
+        if cur and cur_w + add > max_w:
+            lines.append(cur)
+            cur, cur_w = [], 0
+            add = iw
+        cur.append((name, v))
+        cur_w += add
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 def generate_promo_past_games(output_path, config=IPHONE):
@@ -1426,17 +1446,21 @@ def generate_promo_past_games(output_path, config=IPHONE):
     sc = Screen(config)
     x, w = PAD, sc.wdp - 2 * PAD
     y = sc.top + 12
-    y = back_header(sc, y, '過去のゲーム', title_size=20) + 12
-    note = ('星マークをタップでお気に入り（最大20件）。保存はお気に入りを含めて100件までで、'
-            '超えるとお気に入り以外の古いものから自動で削除されます。')
+    y = back_header(sc, y, '過去のゲーム', ('選択', WHITE_A(0.2), WHITE), title_size=20, right_min_w=70) + 12
+    note = ('星マークをタップでお気に入り（最大20件）。長押しで選択して削除できます。'
+            '保存はお気に入りを含めて100件までで、超えるとお気に入り以外の古いものから自動で削除されます。')
     y = sc.paragraph(x, y, note, 12, WHITE_A(0.85), w, 18) + 12
-    card_h = 16 + 22 + 8 + 1 + 10 + 20 + 16
-    for date, count, names, hanchan, fav, imported, joined in PAST_GAMES:
+    for date, count, names, hanchan, fav, imported, joined, scores in PAST_GAMES:
+        ix, iw = x + 16, w - 32
+        hanchan_label = f"{hanchan}半荘"
+        list_w = iw - 8 - sc.text_w(hanchan_label, 13)
+        lines = final_score_lines(sc, names, scores, list_w) if scores else None
+        body_h = 20 if not lines else len(lines) * 18 + (len(lines) - 1) * 2
+        card_h = 16 + 22 + 8 + 1 + 10 + body_h + 16
         if joined:
             sc.card(x, y, w, card_h, fill=C_LIVE_CARD, outline=YELLOW_LIVE, width=2)
         else:
             sc.card(x, y, w, card_h)
-        ix, iw = x + 16, w - 32
         hy = y + 16 + 11
         sc.text(ix, hy, date, 16, SECTION_TITLE_COLOR, True, 'lm')
         bx = ix + sc.text_w(date, 16) + 8
@@ -1458,9 +1482,20 @@ def generate_promo_past_games(output_path, config=IPHONE):
         sc.text(rx, hy, label, 13, GRAY_TEXT, False, 'rm')
         sc.icon('fan' if count == 3 else 'tile', rx - lw - 3 - 16, hy - 8, 16)
         sc.rect(ix, y + 16 + 22 + 8, iw, 1, fill=(238, 238, 238))
-        by = y + 16 + 22 + 8 + 1 + 10 + 10
-        sc.text(ix, by, ' / '.join(names), 14, DARK_TEXT, False, 'lm')
-        sc.text(ix + iw, by, f"{hanchan}半荘", 13, GRAY_TEXT, True, 'rm')
+        body_y = y + 16 + 22 + 8 + 1 + 10
+        if lines:
+            # 終了済みゲームは最終スコア付きで表示（Issue #78）
+            for li, line in enumerate(lines):
+                ly = body_y + li * 20 + 9
+                lx = ix
+                for name, v in line:
+                    sc.text(lx, ly, name + ' ', 14, DARK_TEXT, False, 'lm')
+                    lx += sc.text_w(name + ' ', 14, False)
+                    sc.text(lx, ly, fmt_signed(v), 14, value_color(v), True, 'lm')
+                    lx += sc.text_w(fmt_signed(v), 14) + 12
+        else:
+            sc.text(ix, body_y + 10, ' / '.join(names), 14, DARK_TEXT, False, 'lm')
+        sc.text(ix + iw, body_y + body_h / 2, hanchan_label, 13, GRAY_TEXT, True, 'rm')
         y += card_h + 12
         if y > sc.hdp:
             break
