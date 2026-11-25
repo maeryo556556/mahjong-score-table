@@ -13,6 +13,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +29,7 @@ import {
 } from '../database';
 import { buildDefaultPlayerNames, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import { TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
+import { TitleLogo } from '../components/icons/TitleLogo';
 import { extractSessionCode, sanitizeSessionCodeInput, selectRejoinableSessions, SESSION_CODE_LENGTH } from '../liveSession';
 
 interface SetupScreenProps {
@@ -46,6 +48,9 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const [importCode, setImportCode] = useState('');
   const [showGuide, setShowGuide] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
+  // 右上の「使い方」ボタンと重ならないよう、左右にボタン幅ぶんの余白を残して中央に置く
+  const logoWidth = Math.min(340, Math.max(200, windowWidth - 32 - 2 * 46));
   const guideListRef = useRef<FlatList>(null);
   const importCodeInputRef = useRef<TextInput>(null);
 
@@ -233,11 +238,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
               <Text style={styles.helpButtonText}>?</Text>
               <Text style={styles.helpButtonLabel}>使い方</Text>
             </TouchableOpacity>
-            <View style={styles.titleRow}>
-              <TileIcon size={40} />
-              <Text style={styles.title}>麻雀</Text>
-            </View>
-            <Text style={styles.subtitle}>スコアシートモバイル</Text>
+            <TitleLogo width={logoWidth} />
           </View>
 
           {suspendedGames.length > 0 && (
@@ -519,24 +520,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: 'bold',
     marginTop: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#fff',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#fff',
-    marginTop: 8,
   },
   card: {
     backgroundColor: '#fff',
