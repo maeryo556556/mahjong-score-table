@@ -875,7 +875,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 14,
     marginBottom: 10,
-    transform: [{ rotate: '-2deg' }],
   },
   guideTitle: {
     fontSize: 16,
