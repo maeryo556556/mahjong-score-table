@@ -300,7 +300,12 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                       <View style={styles.gameTypeRow}>
                         <GameTypeLabel playerCount={game.player_count} />
                         {/* お気に入り（終了済みゲームのみ: Issue #60） */}
-                        {!isHostLive && selectionMode && game.favorite === 1 && <StarIcon size={22} filled />}
+                        {/* 選択モードでも星ボタンと同じ領域を確保し、「4人麻雀」の位置がズレないようにする（Issue #94） */}
+                        {!isHostLive && selectionMode && (
+                          <View style={styles.favoriteButton}>
+                            {game.favorite === 1 ? <StarIcon size={22} filled /> : <View style={styles.favoritePlaceholder} />}
+                          </View>
+                        )}
                         {!isHostLive && !selectionMode && (
                           <TouchableOpacity
                             style={styles.favoriteButton}
@@ -627,6 +632,10 @@ const styles = StyleSheet.create({
   },
   favoriteButton: {
     paddingHorizontal: 2,
+  },
+  favoritePlaceholder: {
+    width: 22,
+    height: 22,
   },
   gameTypeLabel: {
     flexDirection: 'row',
