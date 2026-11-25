@@ -24,13 +24,15 @@ import {
   MAX_SAVED_GAMES,
   MAX_FAVORITE_GAMES,
   toggleSelection,
+  isGameSelectable,
   selectableGameIds,
   isAllSelected,
   toggleSelectAll,
   pruneSelection,
-  countSelectedFavorites,
   buildBulkDeleteMessage,
+  formatSignedScore,
 } from '../utils';
+import type { PlayerFinalScore } from '../utils';
 import { StarIcon, TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 import { isLocalSessionActive, selectRejoinableSessions } from '../liveSession';
 import type { JoinedSession } from '../liveSession';
@@ -44,7 +46,12 @@ interface PastGamesScreenProps {
   onJoinLiveSession: (code: string) => void;
 }
 
-type ListGame = ReturnType<typeof getUnfinishedGames>[number] & { imported?: number; favorite?: number };
+type ListGame = ReturnType<typeof getUnfinishedGames>[number] & {
+  imported?: number;
+  favorite?: number;
+  /** 終了済みゲームのみ: プレイヤーごとの最終スコア（Issue #78） */
+  finalScores?: PlayerFinalScore[];
+};
 
 const isActive = (game: ListGame, now: number) =>
   isLocalSessionActive(game.live_session_code, game.live_session_expires_at, now);
@@ -75,7 +82,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
   }, []);
 
   // 複数選択モード（Issue #74）: 長押しまたは「選択」ボタンで開始し、チェックしたゲームをまとめて削除する。
-  // ホストとして共有中（進行中）のゲームと閲覧中の対局は選択できない
+  // ホストとして共有中（進行中）のゲーム・お気に入りのゲーム（Issue #78）・閲覧中の対局は選択できない
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const selectableIds = selectableGameIds(games, liveHostIds);
@@ -105,10 +112,9 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
   const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
     const ids = [...selectedIds];
-    const favoriteCount = countSelectedFavorites(ids, games);
     Alert.alert(
       'まとめて削除',
-      buildBulkDeleteMessage(ids.length, favoriteCount),
+      buildBulkDeleteMessage(ids.length),
       [
         { text: 'キャンセル', style: 'cancel' },
         {
@@ -126,7 +132,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
 
   const handlePressGame = (game: ListGame) => {
     if (selectionMode) {
-      if (!liveHostIds.has(game.id)) setSelectedIds(prev => toggleSelection(prev, game.id));
+      if (isGameSelectable(game, liveHostIds)) setSelectedIds(prev => toggleSelection(prev, game.id));
       return;
     }
     // ホストとして共有中のゲーム → ゲーム画面（共有中）へ
@@ -224,7 +230,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.limitNote}>
             {selectionMode
-              ? '削除するゲームをタップして選んでください。'
+              ? '削除するゲームをタップして選んでください。お気に入りは選択できません。'
               : `星マークをタップでお気に入り（最大${MAX_FAVORITE_GAMES}件）。長押しで選択して削除できます。保存はお気に入りを含めて${MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。`}
           </Text>
           {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58）。選択モード中は隠す */}
@@ -269,8 +275,9 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
               const isHostLive = liveHostIds.has(game.id);
               const live = isActive(game, Date.now());
               const selected = selectedIds.includes(game.id);
-              // 進行中のゲームはここからは削除させない
-              const disabled = selectionMode && isHostLive;
+              // 進行中のゲームとお気に入りのゲーム（Issue #78）はここからは削除させない
+              const selectable = isGameSelectable(game, liveHostIds);
+              const disabled = selectionMode && !selectable;
               return (
                 <TouchableOpacity
                   key={game.id}
@@ -281,7 +288,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     disabled && styles.gameCardDisabled,
                   ]}
                   onPress={() => handlePressGame(game)}
-                  onLongPress={isHostLive || selectionMode ? undefined : () => startSelection(game.id)}
+                  onLongPress={selectionMode || !selectable ? undefined : () => startSelection(game.id)}
                   delayLongPress={600}
                   disabled={disabled}
                   accessibilityRole={selectionMode ? 'checkbox' : 'button'}
@@ -324,9 +331,28 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     </View>
                   </View>
                   <View style={styles.gameCardBody}>
-                    <Text style={styles.playerList}>
-                      {game.playerNames.join(' / ')}
-                    </Text>
+                    {/* 終了済みゲームは最終スコア付きで表示（Issue #78）。未終了のゲームは名前のみ */}
+                    {game.finalScores ? (
+                      <View style={styles.finalScoreList}>
+                        {game.finalScores.map((fs, i) => (
+                          <Text key={i} style={styles.finalScoreItem}>
+                            <Text style={styles.finalScoreName}>{fs.playerName} </Text>
+                            <Text
+                              style={[
+                                styles.finalScoreValue,
+                                fs.total > 0 ? styles.scorePositive : fs.total < 0 ? styles.scoreNegative : styles.scoreNeutral,
+                              ]}
+                            >
+                              {formatSignedScore(fs.total)}
+                            </Text>
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.playerList}>
+                        {game.playerNames.join(' / ')}
+                      </Text>
+                    )}
                     <Text style={styles.hanchanInfo}>
                       {game.hanchanCount}半荘
                     </Text>
@@ -612,6 +638,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+  },
+  finalScoreList: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 12,
+    rowGap: 2,
+  },
+  finalScoreItem: {
+    fontSize: 14,
+  },
+  finalScoreName: {
+    color: '#333',
+  },
+  finalScoreValue: {
+    fontWeight: 'bold',
+  },
+  // 色はゲーム画面の総合スコア（SummaryCards）に合わせる
+  scorePositive: {
+    color: '#28a745',
+  },
+  scoreNegative: {
+    color: '#dc3545',
+  },
+  scoreNeutral: {
+    color: '#6c757d',
   },
   hanchanInfo: {
     fontSize: 13,
