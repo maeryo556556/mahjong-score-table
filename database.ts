@@ -334,6 +334,19 @@ export const deleteGame = (gameId: number) => {
   });
 };
 
+// 複数のゲームをまとめて削除（Issue #74: 過去のゲームの複数選択削除）。1つのトランザクションで行う
+export const deleteGames = (gameIds: readonly number[]) => {
+  if (gameIds.length === 0) return;
+  getDb().withTransactionSync(() => {
+    for (const gameId of gameIds) {
+      getDb().runSync('DELETE FROM chips WHERE game_id = ?', [gameId]);
+      getDb().runSync('DELETE FROM scores WHERE game_id = ?', [gameId]);
+      getDb().runSync('DELETE FROM game_players WHERE game_id = ?', [gameId]);
+      getDb().runSync('DELETE FROM games WHERE id = ?', [gameId]);
+    }
+  });
+};
+
 // プレイヤー名取得
 export const getPlayerNames = (gameId: number) => {
   const result = getDb().getAllSync<{ player_name: string }>(

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   getFinishedGames,
   getUnfinishedGames,
-  deleteGame,
+  deleteGames,
   getJoinedSessions,
   deleteJoinedSession,
   purgeExpiredJoinedSessions,
@@ -20,7 +20,17 @@ import {
   setGameFavorite,
   clearAllData,
 } from '../database';
-import { MAX_SAVED_GAMES, MAX_FAVORITE_GAMES } from '../utils';
+import {
+  MAX_SAVED_GAMES,
+  MAX_FAVORITE_GAMES,
+  toggleSelection,
+  selectableGameIds,
+  isAllSelected,
+  toggleSelectAll,
+  pruneSelection,
+  countSelectedFavorites,
+  buildBulkDeleteMessage,
+} from '../utils';
 import { StarIcon, TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 import { isLocalSessionActive, selectRejoinableSessions } from '../liveSession';
 import type { JoinedSession } from '../liveSession';
@@ -64,7 +74,61 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
     setGames(loadGames());
   }, []);
 
+  // 複数選択モード（Issue #74）: 長押しまたは「選択」ボタンで開始し、チェックしたゲームをまとめて削除する。
+  // ホストとして共有中（進行中）のゲームと閲覧中の対局は選択できない
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const selectableIds = selectableGameIds(games, liveHostIds);
+  const allSelected = isAllSelected(selectedIds, selectableIds);
+  const selectableKey = selectableIds.join(',');
+
+  // 一覧が更新されたら、無くなったゲームを選択から外す。選択できるゲームが無くなったらモードを終える
+  useEffect(() => {
+    const ids = selectableKey ? selectableKey.split(',').map(Number) : [];
+    setSelectedIds(prev => {
+      const next = pruneSelection(prev, ids);
+      return next.length === prev.length ? prev : next;
+    });
+    if (ids.length === 0) setSelectionMode(false);
+  }, [selectableKey]);
+
+  const startSelection = (gameId?: number) => {
+    setSelectionMode(true);
+    setSelectedIds(gameId === undefined ? [] : [gameId]);
+  };
+
+  const exitSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds([]);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    const ids = [...selectedIds];
+    const favoriteCount = countSelectedFavorites(ids, games);
+    Alert.alert(
+      'まとめて削除',
+      buildBulkDeleteMessage(ids.length, favoriteCount),
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: `${ids.length}件を削除`,
+          style: 'destructive',
+          onPress: () => {
+            deleteGames(ids);
+            exitSelection();
+            refreshGames();
+          },
+        },
+      ]
+    );
+  };
+
   const handlePressGame = (game: ListGame) => {
+    if (selectionMode) {
+      if (!liveHostIds.has(game.id)) setSelectedIds(prev => toggleSelection(prev, game.id));
+      return;
+    }
     // ホストとして共有中のゲーム → ゲーム画面（共有中）へ
     if (liveHostIds.has(game.id)) {
       onResumeLiveGame(game.id);
@@ -131,24 +195,6 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
     );
   };
 
-  const handleDeleteGame = (gameId: number, startDate: string) => {
-    Alert.alert(
-      'ゲーム削除',
-      `${startDate} のゲームを削除しますか？\nこの操作は取り消せません。`,
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: '削除',
-          style: 'destructive',
-          onPress: () => {
-            deleteGame(gameId);
-            refreshGames();
-          },
-        },
-      ]
-    );
-  };
-
   return (
     <LinearGradient colors={['#1e3c72', '#2a5298']} style={styles.gradient}>
       <SafeAreaView style={styles.container}>
@@ -157,15 +203,32 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
             <Text style={styles.backButtonText}>← 戻る</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>過去のゲーム</Text>
-          <View style={styles.headerSpacer} />
+          {selectionMode ? (
+            <TouchableOpacity style={styles.selectButton} onPress={exitSelection} accessibilityRole="button">
+              <Text style={styles.selectButtonText}>キャンセル</Text>
+            </TouchableOpacity>
+          ) : selectableIds.length > 0 ? (
+            <TouchableOpacity
+              style={styles.selectButton}
+              onPress={() => startSelection()}
+              accessibilityRole="button"
+              accessibilityLabel="ゲームを選択して削除"
+            >
+              <Text style={styles.selectButtonText}>選択</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.limitNote}>
-            星マークをタップでお気に入り（最大{MAX_FAVORITE_GAMES}件）。保存はお気に入りを含めて{MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。
+            {selectionMode
+              ? '削除するゲームをタップして選んでください。'
+              : `星マークをタップでお気に入り（最大${MAX_FAVORITE_GAMES}件）。長押しで選択して削除できます。保存はお気に入りを含めて${MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。`}
           </Text>
-          {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58） */}
-          {joinedSessions.map(session => (
+          {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58）。選択モード中は隠す */}
+          {!selectionMode && joinedSessions.map(session => (
             <TouchableOpacity
               key={`joined-${session.code}`}
               style={[styles.gameCard, styles.gameCardLive]}
@@ -205,17 +268,32 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
             games.map(game => {
               const isHostLive = liveHostIds.has(game.id);
               const live = isActive(game, Date.now());
+              const selected = selectedIds.includes(game.id);
+              // 進行中のゲームはここからは削除させない
+              const disabled = selectionMode && isHostLive;
               return (
                 <TouchableOpacity
                   key={game.id}
-                  style={[styles.gameCard, live && styles.gameCardLive]}
+                  style={[
+                    styles.gameCard,
+                    live && styles.gameCardLive,
+                    selected && styles.gameCardSelected,
+                    disabled && styles.gameCardDisabled,
+                  ]}
                   onPress={() => handlePressGame(game)}
-                  // 進行中のゲームはここからは削除させない
-                  onLongPress={isHostLive ? undefined : () => handleDeleteGame(game.id, game.start_date)}
-                  delayLongPress={800}
+                  onLongPress={isHostLive || selectionMode ? undefined : () => startSelection(game.id)}
+                  delayLongPress={600}
+                  disabled={disabled}
+                  accessibilityRole={selectionMode ? 'checkbox' : 'button'}
+                  accessibilityState={selectionMode ? { checked: selected, disabled } : undefined}
                 >
                   <View style={styles.gameCardHeader}>
                     <View style={styles.gameDateRow}>
+                      {selectionMode && (
+                        <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
+                          {selected && <Text style={styles.checkboxMark}>✓</Text>}
+                        </View>
+                      )}
                       <Text style={styles.gameDate}>{game.start_date}</Text>
                       {live && (
                         <View style={styles.liveBadge}>
@@ -231,7 +309,8 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     <View style={styles.gameTypeRow}>
                       <GameTypeLabel playerCount={game.player_count} />
                       {/* お気に入り（終了済みゲームのみ: Issue #60） */}
-                      {!isHostLive && (
+                      {!isHostLive && selectionMode && game.favorite === 1 && <StarIcon size={22} filled />}
+                      {!isHostLive && !selectionMode && (
                         <TouchableOpacity
                           style={styles.favoriteButton}
                           onPress={() => handleToggleFavorite(game)}
@@ -258,12 +337,36 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
           )}
 
           {/* 保存データのクリア（Issue #60: セットアップ画面から移動） */}
-          {(games.length > 0 || joinedSessions.length > 0) && (
+          {!selectionMode && (games.length > 0 || joinedSessions.length > 0) && (
             <TouchableOpacity style={styles.clearButton} onPress={handleClearData} accessibilityRole="button">
               <Text style={styles.clearButtonText}>保存データをクリア</Text>
             </TouchableOpacity>
           )}
         </ScrollView>
+
+        {/* 複数選択モードの操作バー（Issue #74） */}
+        {selectionMode && (
+          <View style={styles.selectionBar}>
+            <TouchableOpacity
+              style={styles.selectAllButton}
+              onPress={() => setSelectedIds(prev => toggleSelectAll(prev, selectableIds))}
+              accessibilityRole="button"
+            >
+              <Text style={styles.selectAllButtonText}>{allSelected ? '選択解除' : 'すべて選択'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bulkDeleteButton, selectedIds.length === 0 && styles.bulkDeleteButtonDisabled]}
+              onPress={handleBulkDelete}
+              disabled={selectedIds.length === 0}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: selectedIds.length === 0 }}
+            >
+              <Text style={styles.bulkDeleteButtonText}>
+                {selectedIds.length > 0 ? `削除（${selectedIds.length}件）` : '削除'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -311,6 +414,85 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 70,
+  },
+  selectButton: {
+    minWidth: 70,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  selectButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  gameCardSelected: {
+    borderWidth: 2,
+    borderColor: '#dc3545',
+    backgroundColor: '#fff5f5',
+  },
+  gameCardDisabled: {
+    opacity: 0.5,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#adb5bd',
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    borderColor: '#dc3545',
+    backgroundColor: '#dc3545',
+  },
+  checkboxDisabled: {
+    backgroundColor: '#e9ecef',
+  },
+  checkboxMark: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    lineHeight: 16,
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  selectAllButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  selectAllButtonText: {
+    color: '#1e3c72',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  bulkDeleteButton: {
+    flex: 1,
+    backgroundColor: '#dc3545',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  bulkDeleteButtonDisabled: {
+    backgroundColor: 'rgba(220,53,69,0.45)',
+  },
+  bulkDeleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   scrollContent: {
     padding: 16,

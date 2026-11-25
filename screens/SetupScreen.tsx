@@ -43,6 +43,16 @@ import type { ImportedGameRef } from '../liveSession';
 // 使い方のモーダル（Issue #72）
 const GUIDE_PADDING = 18;
 const GUIDE_IMAGE_ASPECT = 3 / 4; // assets/guide/ の画像（高さ / 幅）
+// ページごとのアクセント色と淡い背景色（generate_assets.py の GUIDE_THEMES と揃える。Issue #74）
+const GUIDE_THEMES = [
+  { accent: '#ff7043', soft: '#fff3e0' },
+  { accent: '#2979ff', soft: '#e3f2fd' },
+  { accent: '#ffa000', soft: '#fff8e1' },
+  { accent: '#ec407a', soft: '#fce4ec' },
+  { accent: '#43a047', soft: '#e8f5e9' },
+  { accent: '#f57f17', soft: '#fffde7' },
+  { accent: '#7c4dff', soft: '#ede7f6' },
+];
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
@@ -79,72 +89,18 @@ export default function SetupScreen({
   const importCodeInputRef = useRef<TextInput>(null);
 
   // 使い方ガイド（Issue #58: リアルタイム共有・閲覧モード・6桁のセッションコードに合わせて更新）
-  // Issue #62: 各ステップを要点だけの短い文に整理
   // 各スライドの画像は generate_assets.py で生成した画面イメージ（assets/guide/、4:3。Issue #72）
+  // Issue #74: 明るく楽しいトーンに。説明はページごとに一言だけ
   const guideSlides = [
-    {
-      title: 'ゲームの始め方',
-      image: require('../assets/guide/guide_1_setup.png'),
-      steps: [
-        '3人／4人麻雀を選ぶ',
-        `名前を入力（${MAX_PLAYER_NAME_LENGTH}文字以内）`,
-        '「ゲーム開始」をタップ',
-      ],
-    },
-    {
-      title: 'スコアの記録',
-      image: require('../assets/guide/guide_2_score.png'),
-      steps: [
-        'ドラムロールでポイントを入力',
-        '合計±0にして「スコアを記録」',
-        '名前は「名前変更」でいつでも修正',
-      ],
-    },
-    {
-      title: 'チップの記録',
-      image: require('../assets/guide/guide_3_chip.png'),
-      steps: [
-        'チップの移動を入力',
-        '合計±0にして「チップを記録」',
-      ],
-    },
-    {
-      title: 'ゲームの中断・終了',
-      image: require('../assets/guide/guide_4_finish.png'),
-      steps: [
-        '「中断」で一時保存（あとで再開）',
-        '「ゲーム終了」で結果を確定',
-        '記録は長押しで削除',
-      ],
-    },
-    {
-      title: 'リアルタイム共有',
-      image: require('../assets/guide/guide_5_live_share.png'),
-      steps: [
-        '「リアルタイム共有を開始」をタップ',
-        '6桁のコードをメンバーに伝える',
-        '記録は自動で共有（ゲーム終了まで・最長48時間）',
-      ],
-    },
-    {
-      title: '閲覧モード（参加する側）',
-      image: require('../assets/guide/guide_6_live_viewer.png'),
-      steps: [
-        '「ゲームを取り込む」に6桁のコードを入力',
-        'ホストの記録が自動で表示（編集不可）',
-        '「過去のゲームを見る」から再び閲覧できる',
-      ],
-    },
-    {
-      title: '過去のゲームと共有',
-      image: require('../assets/guide/guide_7_share.png'),
-      steps: [
-        '「過去のゲームを見る」で対局を確認',
-        '「共有」で6桁のコードを発行（48時間有効）',
-        '受け取った側は「対局を履歴に保存」できる',
-      ],
-    },
+    { title: 'ゲームの始め方', image: require('../assets/guide/guide_1_setup.png'), caption: '名前を入れてゲーム開始！' },
+    { title: 'スコアの記録', image: require('../assets/guide/guide_2_score.png'), caption: 'ポイントを入れて記録！' },
+    { title: 'チップの記録', image: require('../assets/guide/guide_3_chip.png'), caption: 'チップもポチッと記録！' },
+    { title: '中断・終了', image: require('../assets/guide/guide_4_finish.png'), caption: '中断も終了もボタンひとつ！' },
+    { title: 'リアルタイム共有', image: require('../assets/guide/guide_5_live_share.png'), caption: 'コードを伝えてみんなで見よう！' },
+    { title: '閲覧モード', image: require('../assets/guide/guide_6_live_viewer.png'), caption: 'コードを入れて観戦しよう！' },
+    { title: '過去のゲーム', image: require('../assets/guide/guide_7_share.png'), caption: '思い出の対局も共有できる！' },
   ];
+  const guideTheme = (i: number) => GUIDE_THEMES[i % GUIDE_THEMES.length];
 
   const guideMockups: React.ReactNode[] = guideSlides.map((slide, i) => (
     <Image
@@ -476,7 +432,7 @@ export default function SetupScreen({
 
         <Modal visible={showGuide} transparent animationType="fade" onRequestClose={() => setShowGuide(false)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.guideModalContent, { width: guideWidth }]}>
+            <View style={[styles.guideModalContent, { width: guideWidth, backgroundColor: guideTheme(guideIndex).soft }]}>
               <TouchableOpacity
                 style={styles.guideCloseButton}
                 onPress={() => setShowGuide(false)}
@@ -501,18 +457,11 @@ export default function SetupScreen({
                 onMomentumScrollEnd={handleGuideScroll}
                 renderItem={({ item, index }) => (
                   <View style={[styles.guideSlide, { width: guideWidth }]}>
-                    <Text style={styles.guideTitle}>{item.title}</Text>
-                    {guideMockups[index]}
-                    <View style={styles.guideSteps}>
-                      {item.steps.map((step: string, i: number) => (
-                        <View key={i} style={styles.guideStepRow}>
-                          <View style={styles.guideStepBadge}>
-                            <Text style={styles.guideStepBadgeText}>{i + 1}</Text>
-                          </View>
-                          <Text style={styles.guideStepText}>{step}</Text>
-                        </View>
-                      ))}
+                    <View style={[styles.guideTitleBadge, { backgroundColor: guideTheme(index).accent }]}>
+                      <Text style={styles.guideTitle}>{item.title}</Text>
                     </View>
+                    {guideMockups[index]}
+                    <Text style={[styles.guideCaption, { color: guideTheme(index).accent }]}>{item.caption}</Text>
                   </View>
                 )}
               />
@@ -525,7 +474,7 @@ export default function SetupScreen({
                   accessibilityRole="button"
                   accessibilityLabel="前のページ"
                 >
-                  <Text style={[styles.guideNavText, guideIndex === 0 && styles.guideNavTextDisabled]}>←</Text>
+                  <Text style={[styles.guideNavText, { color: guideTheme(guideIndex).accent }, guideIndex === 0 && styles.guideNavTextDisabled]}>←</Text>
                 </TouchableOpacity>
                 <View style={styles.guideIndicator}>
                   <View style={styles.guideDots}>
@@ -537,7 +486,7 @@ export default function SetupScreen({
                         accessibilityRole="button"
                         accessibilityLabel={`${i + 1}ページ目`}
                       >
-                        <View style={[styles.guideDot, i === guideIndex && styles.guideDotActive]} />
+                        <View style={[styles.guideDot, i === guideIndex && [styles.guideDotActive, { backgroundColor: guideTheme(i).accent }]]} />
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -545,7 +494,7 @@ export default function SetupScreen({
                 </View>
                 {guideIndex < guideSlides.length - 1 ? (
                   <TouchableOpacity
-                    style={[styles.guideNavButton, styles.guideNavNext]}
+                    style={[styles.guideNavButton, styles.guideNavNext, { backgroundColor: guideTheme(guideIndex).accent }]}
                     onPress={() => goToGuidePage(guideIndex + 1)}
                     accessibilityRole="button"
                     accessibilityLabel="次のページ"
@@ -554,7 +503,7 @@ export default function SetupScreen({
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.guideNavButton, styles.guideNavNext]}
+                    style={[styles.guideNavButton, styles.guideNavNext, { backgroundColor: guideTheme(guideIndex).accent }]}
                     onPress={() => setShowGuide(false)}
                     accessibilityRole="button"
                   >
@@ -847,7 +796,9 @@ const styles = StyleSheet.create({
   },
   guideModalContent: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 22,
+    borderWidth: 3,
+    borderColor: '#fff',
     paddingTop: 16,
     paddingBottom: 14,
     overflow: 'hidden',
@@ -859,7 +810,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1,
@@ -867,46 +818,30 @@ const styles = StyleSheet.create({
   guideCloseText: {
     fontSize: 18,
     lineHeight: 20,
-    color: '#666',
+    color: '#888',
     fontWeight: 'bold',
   },
   guideSlide: {
     alignItems: 'center',
     paddingHorizontal: GUIDE_PADDING,
   },
+  guideTitleBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 14,
+    marginBottom: 10,
+    transform: [{ rotate: '-2deg' }],
+  },
   guideTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  guideCaption: {
     fontSize: 17,
     fontWeight: 'bold',
-    color: '#1e3c72',
-    marginBottom: 10,
-  },
-  guideSteps: {
-    width: '100%',
-    gap: 6,
-  },
-  guideStepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  guideStepBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#2a5298',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  guideStepBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  guideStepText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#333',
-    lineHeight: 18,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   guideNav: {
     flexDirection: 'row',
@@ -917,7 +852,7 @@ const styles = StyleSheet.create({
   },
   guideNavButton: {
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 18,
     minWidth: 64,
     alignItems: 'center',
   },
@@ -966,9 +901,7 @@ const styles = StyleSheet.create({
 // ガイド内モックアップ用スタイル
 const g = StyleSheet.create({
   mockupImage: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#dee2e6',
+    borderRadius: 14,
     marginBottom: 10,
   },
 });
