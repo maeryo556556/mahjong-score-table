@@ -1043,6 +1043,102 @@ def finish_modal(sc, totals, rank_counts):
 # ──────────────────────────────────────────────
 # 掲載画像の枠（キャッチコピー + 端末フレーム）
 # ──────────────────────────────────────────────
+# Issue #84: 使い方ガイドの画像（Issue #74 / #80）と同系統の明るく楽しいトーンに作り替え。
+# ページごとのパステル調のグラデーション背景に水玉・紙吹雪・きらきらを散らし、
+# 上部に一言のキャッチーな見出しを大きく入れ、アプリの手書き風アイコンをステッカーとして添える。
+# 端末のモックアップは傾けずに中央へ置き、全体が画像内に収まる大きさにする（文字やボタンを見切れさせない）。
+
+PROMO_SEED = 84
+
+# ページごとの配色（背景グラデーション上・下、アクセント）。ガイドの GUIDE_THEMES と同じ系統
+PROMO_THEMES = [
+    ((255, 241, 118), (255, 183, 77), (255, 112, 67)),     # 1 レモン → オレンジ
+    ((178, 235, 242), (129, 212, 250), (41, 121, 255)),    # 2 ミント → スカイ
+    ((255, 236, 179), (255, 204, 128), (255, 143, 0)),     # 3 ひまわり
+    ((248, 187, 208), (225, 190, 231), (236, 64, 122)),    # 4 ピーチ → ラベンダー
+    ((255, 245, 157), (255, 213, 79), (245, 127, 23)),     # 5 たまご
+    ((209, 196, 233), (179, 229, 252), (124, 77, 255)),    # 6 ラベンダー → 空色
+    ((200, 230, 201), (165, 214, 167), (67, 160, 71)),     # 7 ライム
+    ((255, 224, 178), (255, 245, 157), (230, 81, 0)),      # 8 アプリコット → レモン
+]
+# 見出しの文字色（アクセントより濃い色で、白フチを付けて読みやすくする）
+PROMO_HEADLINE_COLOR = (33, 43, 84)
+
+
+def _shade(color, k):
+    return tuple(max(0, min(255, int(c * k))) for c in color)
+
+
+def _promo_background(W, H, index):
+    """パステルのグラデーション + 水玉 + 紙吹雪 + きらきら（ガイド画像と同じ作り）。"""
+    import random
+    top, bottom, accent = PROMO_THEMES[index]
+    bg = Image.new('RGBA', (W, H), (0, 0, 0, 255))
+    draw_gradient_bg(bg, top, bottom)
+    rnd = random.Random(PROMO_SEED * 100 + index)
+    s = W / 960  # ガイド画像（幅 960px）基準の倍率
+    layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    # 大きな水玉（うっすら）
+    for _ in range(int(9 * H / W) + 4):
+        r = int(rnd.randint(60, 150) * s)
+        x, y = rnd.randint(-40, W + 40), rnd.randint(-40, H + 40)
+        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 60))
+    # 紙吹雪（丸・細長い四角・きらきら）
+    piece_px = int(34 * s)
+    for _ in range(int(60 * H / W) + 30):
+        c = rnd.choice(CONFETTI_COLORS + [accent])
+        x, y = rnd.randint(0, W), rnd.randint(0, H)
+        kind = rnd.random()
+        if kind < 0.4:
+            r = int(rnd.randint(5, 11) * s)
+            d.ellipse((x - r, y - r, x + r, y + r), fill=c + (220,))
+        elif kind < 0.8:
+            piece = Image.new('RGBA', (piece_px, piece_px), (0, 0, 0, 0))
+            ImageDraw.Draw(piece).rounded_rectangle(
+                (piece_px * 0.32, piece_px * 0.12, piece_px * 0.62, piece_px * 0.88),
+                radius=int(4 * s), fill=c + (230,))
+            piece = piece.rotate(rnd.randint(0, 180), resample=Image.BICUBIC)
+            layer.alpha_composite(piece, dest=(max(0, x - piece_px // 2), max(0, y - piece_px // 2)))
+        else:
+            _sparkle(d, x, y, rnd.randint(10, 16) * s)
+    bg.alpha_composite(layer)
+    return bg, accent
+
+
+def _sparkle(d, x, y, r, fill=(255, 255, 255, 235)):
+    pts = []
+    for k in range(8):
+        a = math.pi / 4 * k
+        rr = r if k % 2 == 0 else r * 0.32
+        pts.append((x + math.cos(a) * rr, y + math.sin(a) * rr))
+    d.polygon(pts, fill=fill)
+
+
+def _promo_sticker(name, radius, accent, tilt):
+    """手書き風アイコンを白い丸の台紙に貼ったステッカー（ガイド画像と同じ作り）。"""
+    sticker = ICONS[name]
+    pad = int(radius * 0.4)
+    size = radius * 2 + pad * 2
+    disc = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    off = max(2, radius // 14)
+    ImageDraw.Draw(disc).ellipse((pad + off, pad + off * 2, pad + radius * 2 + off, pad + radius * 2 + off * 2),
+                                 fill=(0, 0, 0, 55))
+    disc = disc.filter(ImageFilter.GaussianBlur(max(2, radius // 14)))
+    dd = ImageDraw.Draw(disc)
+    dd.ellipse((pad, pad, pad + radius * 2, pad + radius * 2), fill=(255, 255, 255, 255),
+               outline=accent + (255,), width=max(4, radius // 8))
+    icon_px = int(radius * 1.3)
+    # 白線のアイコン（送信・配信）は白い台紙だと見えないので、アクセント色の丸を下に敷く
+    if name in ('send', 'broadcast'):
+        inset = int(radius * 0.21)
+        dd.ellipse((pad + inset, pad + inset, pad + radius * 2 - inset, pad + radius * 2 - inset),
+                   fill=accent + (255,))
+        icon_px = int(radius * 1.05)
+    ic = sticker.resize((icon_px, int(round(icon_px * sticker.height / sticker.width))), Image.LANCZOS)
+    disc.alpha_composite(ic, dest=(pad + radius - ic.width // 2, pad + radius - ic.height // 2))
+    return disc.rotate(tilt, resample=Image.BICUBIC)
+
 
 def fit_font(draw, text, kind, size, max_w):
     while size > 10:
@@ -1053,61 +1149,98 @@ def fit_font(draw, text, kind, size, max_w):
     return pfont(kind, size)
 
 
-def create_promo_frame(screen_img, title, subtitle, config):
-    promo_w, promo_h = config.promo_w, config.promo_h
-    img = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 255))
-    draw_gradient_bg(img, (14, 30, 70), (48, 96, 170))
-
-    # 端末の後ろの淡い光
-    glow = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((promo_w * 0.05, promo_h * 0.28, promo_w * 0.95, promo_h * 0.9),
-                                 fill=(120, 170, 255, 60))
-    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(promo_w * 0.08)))
-
+def create_promo_frame(screen_img, headline, subtitle, sticker, index, config):
+    """headline は「\n」で改行できる一言の見出し。subtitle は機能の補足（白いラベルに入れる）。"""
+    W, H = config.promo_w, config.promo_h
+    img, accent = _promo_background(W, H, index)
     draw = ImageDraw.Draw(img)
-    unit = promo_w if not config.is_tablet else promo_w * 0.8
-    y = int(promo_h * 0.035)
-    tf = fit_font(draw, title, 'caption', int(unit * 0.088), promo_w * 0.9)
-    sh = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sh).text((promo_w // 2 + 4, y + 6), title, font=tf, fill=(0, 0, 0, 110), anchor='ma')
-    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(4)))
-    draw = ImageDraw.Draw(img)
-    draw.text((promo_w // 2, y), title, font=tf, fill=WHITE, anchor='ma')
-    y += int(tf.size * 1.32)
-    sf = fit_font(draw, subtitle, 'caption', int(unit * 0.056), promo_w * 0.9)
-    draw.text((promo_w // 2, y), subtitle, font=sf, fill=(255, 213, 79), anchor='ma')
-    y += int(sf.size * 1.45) + int(promo_h * 0.012)
+    unit = W if not config.is_tablet else W * 0.78
 
-    # 端末（下端まで収まる最大サイズ）
+    # 見出し（白フチ + アクセント色のやわらかい影）
+    lines = headline.split('\n')
+    max_w = W * 0.86
+    size = int(unit * 0.104)
+    tf = pfont('caption', size)
+    while size > 20 and max(draw.textlength(l, font=tf) for l in lines) > max_w - 2 * size * 0.12:
+        size -= 2
+        tf = pfont('caption', size)
+    stroke = max(6, int(size * 0.11))
+    line_h = int(size * 1.22)
+    y = int(H * 0.045)
+    sh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sh)
+    for i, line in enumerate(lines):
+        sd.text((W // 2, y + i * line_h + int(size * 0.07)), line, font=tf, fill=_shade(accent, 0.8) + (150,),
+                anchor='ma', stroke_width=stroke, stroke_fill=_shade(accent, 0.8) + (150,))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(max(3, size // 18))))
+    draw = ImageDraw.Draw(img)
+    for i, line in enumerate(lines):
+        draw.text((W // 2, y + i * line_h), line, font=tf, fill=PROMO_HEADLINE_COLOR, anchor='ma',
+                  stroke_width=stroke, stroke_fill=(255, 255, 255))
+    y += line_h * len(lines) + int(size * 0.28)
+
+    # 補足のラベル（白い角丸 + アクセント色の文字）
+    sf = fit_font(draw, subtitle, 'caption', int(unit * 0.05), W * 0.58)
+    tw = draw.textlength(subtitle, font=sf)
+    pill_h = int(sf.size * 1.75)
+    pill_w = int(tw + sf.size * 1.6)
+    pill_x = (W - pill_w) // 2
+    psh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(psh).rounded_rectangle((pill_x, y + 6, pill_x + pill_w, y + pill_h + 6), radius=pill_h // 2,
+                                          fill=_shade(accent, 0.8) + (90,))
+    img.alpha_composite(psh.filter(ImageFilter.GaussianBlur(8)))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((pill_x, y, pill_x + pill_w, y + pill_h), radius=pill_h // 2, fill=(255, 255, 255),
+                           outline=accent, width=max(3, sf.size // 10))
+    draw.text((W // 2, y + pill_h // 2), subtitle, font=sf, fill=_shade(accent, 0.78), anchor='mm')
+    pill_cy = y + pill_h // 2
+    y += pill_h + int(H * 0.022)
+
+    # 端末（傾けずに中央へ。下端まで余白を残して全体が収まる最大サイズ）
     sw, sh_ = config.screen_w, config.screen_h
-    bottom_margin = int(promo_h * 0.03)
-    avail_h = promo_h - y - bottom_margin
-    bezel_ratio = 0.03 if config.is_tablet else 0.032
-    phone_w = min(int(promo_w * (0.84 if config.is_tablet else 0.8)), int(avail_h / (sh_ / sw + 2 * bezel_ratio)))
+    bottom_margin = int(H * 0.035)
+    avail_h = H - y - bottom_margin
+    bezel_ratio = 0.028 if config.is_tablet else 0.034
+    phone_w = min(int(W * (0.8 if config.is_tablet else 0.78)), int(avail_h / (sh_ / sw + 2 * bezel_ratio)))
     phone_h = int(phone_w * sh_ / sw)
     bezel = int(phone_w * bezel_ratio)
     corner = int(phone_w * (0.035 if config.is_tablet else 0.13))
     ow, oh = phone_w + 2 * bezel, phone_h + 2 * bezel
-    px = (promo_w - ow) // 2
-    py = promo_h - bottom_margin - oh
+    px = (W - ow) // 2
+    py = y + (avail_h - oh) // 2
+    assert px >= 0 and py >= y and py + oh <= H - bottom_margin + 1
 
-    shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle((px + 10, py + 24, px + ow + 10, py + oh + 24),
-                                             radius=corner + bezel, fill=(0, 0, 0, 120))
-    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(36)))
+    shadow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((px, py + int(W * 0.012), px + ow, py + oh + int(W * 0.012)),
+                                             radius=corner + bezel, fill=_shade(accent, 0.7) + (130,))
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(int(W * 0.022))))
     draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle((px, py, px + ow, py + oh), radius=corner + bezel, fill=(24, 24, 28),
-                           outline=(92, 96, 108), width=max(3, bezel // 7))
-
+    # 白い本体 + 細い縁取り（ガイド画像の白いフチのカードに合わせる）
+    draw.rounded_rectangle((px, py, px + ow, py + oh), radius=corner + bezel, fill=(255, 255, 255),
+                           outline=(226, 230, 238), width=max(3, bezel // 8))
     screen = screen_img.resize((phone_w, phone_h), Image.LANCZOS)
     mask = Image.new('L', (phone_w, phone_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, phone_w - 1, phone_h - 1), radius=corner, fill=255)
     img.paste(screen, (px + bezel, py + bezel), mask)
+
+    # ステッカー: 補足ラベルの横（見出しにも端末にも重ならない位置）に貼る
+    left = index % 2 == 0
+    side_w = pill_x  # ラベルの左右の余白
+    radius = int(min(unit * 0.07, side_w * 0.4))
+    st = _promo_sticker(sticker, radius, accent, 10 if left else -10)
+    scx = pill_x // 2 if left else W - pill_x // 2
+    img.alpha_composite(st, dest=(scx - st.width // 2, pill_cy - st.height // 2))
+    # 反対側にきらきらを添える
+    d = ImageDraw.Draw(img)
+    kx = W - pill_x // 2 if left else pill_x // 2
+    _sparkle(d, kx, pill_cy - radius * 0.3, radius * 0.55, fill=(255, 255, 255, 255))
+    _sparkle(d, kx + (radius * 0.6 if left else -radius * 0.6), pill_cy + radius * 0.55, radius * 0.3,
+             fill=accent + (255,))
     return img.convert('RGB')
 
 
-def save_promo(sc, title, subtitle, config, output_path):
-    promo = create_promo_frame(sc.finish(), title, subtitle, config)
+def save_promo(sc, headline, subtitle, sticker, index, config, output_path):
+    promo = create_promo_frame(sc.finish(), headline, subtitle, sticker, index, config)
     assert promo.size == (config.promo_w, config.promo_h)
     promo.save(output_path, 'PNG', optimize=True)
     print(f"Generated: {output_path} ({promo.size[0]}x{promo.size[1]})")
@@ -1177,7 +1310,7 @@ def generate_promo_setup(output_path, config=IPHONE):
     """初期画面（新しいタイトルロゴ・麻雀タイプのアイコン）。"""
     sc = Screen(config)
     draw_setup_screen(sc)
-    save_promo(sc, '3人・4人麻雀に対応', '名前を入れてすぐにスタート', config, output_path)
+    save_promo(sc, '名前を入れて\nすぐにスタート！', '3人・4人麻雀に対応', 'tile', 0, config, output_path)
 
 
 def draw_game_screen(sc, scroll, hanchan, n_rounds, n_chips, score_values, chip_values, live_host=False):
@@ -1212,7 +1345,7 @@ def generate_promo_score(output_path, config=IPHONE):
     """スコア入力（ポイント入力）。"""
     sc = Screen(config)
     draw_game_screen(sc, 0, 3, 2, 1, [32, -15, -8, -9], [0, 0, 0, 0])
-    save_promo(sc, 'ポイントをかんたん入力', 'ボタンで増減・合計±0で記録', config, output_path)
+    save_promo(sc, '点数の入力は\nタップだけ！', 'ボタンで増減・合計±0で記録', 'pencil', 1, config, output_path)
 
 
 def generate_promo_chip(output_path, config=IPHONE):
@@ -1220,7 +1353,7 @@ def generate_promo_chip(output_path, config=IPHONE):
     chip_top, _ = game_offsets(config)
     sc = Screen(config)
     draw_game_screen(sc, chip_top - PAD, 4, 3, 1, [0] * 4, [3, -1, 2, -4])
-    save_promo(sc, 'チップの移動も記録', '総合スコアに自動で反映', config, output_path)
+    save_promo(sc, 'チップも\nまとめて記録！', '総合スコアに自動で反映', 'celebrate_chip', 2, config, output_path)
 
 
 def generate_promo_summary(output_path, config=IPHONE):
@@ -1229,7 +1362,7 @@ def generate_promo_summary(output_path, config=IPHONE):
     sc = Screen(config)
     _, _, (totals, rank_counts) = draw_game_screen(sc, summary_top - PAD, 4, 3, 1, [0] * 4, [0] * 4)
     finish_modal(sc, totals, rank_counts)
-    save_promo(sc, '順位とスコアをひと目で', 'ゲーム終了で結果を確定', config, output_path)
+    save_promo(sc, '順位もスコアも\nひと目でわかる！', 'ゲーム終了で結果を確定', 'medal1', 3, config, output_path)
 
 
 def generate_promo_live_host(output_path, config=IPHONE):
@@ -1239,7 +1372,7 @@ def generate_promo_live_host(output_path, config=IPHONE):
     code_modal(sc, 'リアルタイム共有', '「ゲームを取り込む」にこのコードを入力すると閲覧できます',
                LIVE_CODE, LIVE_EXPIRES,
                [('コードをコピー', GREEN, WHITE), ('閉じる', (240, 240, 240), LIGHT_TEXT)])
-    save_promo(sc, 'リアルタイム共有', '6桁の数字コード・最長48時間', config, output_path)
+    save_promo(sc, 'コードを伝えて\nみんなで見よう！', 'リアルタイム共有・最長48時間', 'broadcast', 6, config, output_path)
 
 
 def generate_promo_live_viewer(output_path, config=IPHONE):
@@ -1254,7 +1387,7 @@ def generate_promo_live_viewer(output_path, config=IPHONE):
                     'broadcast_dark', live_mode=True) + 16
     y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
     history_table(sc, y, rows, editable=False)
-    save_promo(sc, '閲覧モード', 'ホストの記録が自動で反映', config, output_path)
+    save_promo(sc, 'みんなのスマホに\nスコアが届く！', '閲覧モードで自動反映', 'broadcast_dark', 7, config, output_path)
 
 
 def generate_promo_share(output_path, config=IPHONE):
@@ -1271,7 +1404,7 @@ def generate_promo_share(output_path, config=IPHONE):
                SHARE_CODE, SHARE_EXPIRES,
                [('送信する', C_BLUE_BOTTOM, WHITE), ('コードをコピー', GREEN, WHITE),
                 ('閉じる', (240, 240, 240), LIGHT_TEXT)])
-    save_promo(sc, '終わった対局も共有', '6桁の数字コード・48時間有効', config, output_path)
+    save_promo(sc, '終わった対局も\nコードでシェア！', '6桁の数字コード・48時間有効', 'send', 5, config, output_path)
 
 
 PAST_GAMES = [
@@ -1331,7 +1464,7 @@ def generate_promo_past_games(output_path, config=IPHONE):
         y += card_h + 12
         if y > sc.hdp:
             break
-    save_promo(sc, '過去の対局を保存', 'お気に入り登録・最大100件まで保存', config, output_path)
+    save_promo(sc, 'あの日の対局も\nちゃんと残る！', 'お気に入り登録・最大100件保存', 'star_on', 4, config, output_path)
 
 
 YELLOW_LIVE = (249, 168, 37)  # #f9a825
