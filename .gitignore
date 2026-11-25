@@ -44,3 +44,5 @@ app-example
 
 # idea
 .idea
+# generate_assets.py のフォントキャッシュ
+.cache/

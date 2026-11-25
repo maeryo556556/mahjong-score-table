@@ -3,9 +3,19 @@
 
 Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
-  - iphone/promo_1_setup.png ... promo_8_live_viewer.png (8 iPhone promotional screenshots)
-  - ipad/promo_1_setup.png ... promo_8_live_viewer.png (8 iPad promotional screenshots)
+  - iphone/promo_1_setup.png ... promo_8_live_viewer.png (8 iPhone App Store images, 1242x2688)
+  - ipad/promo_1_setup.png ... promo_8_live_viewer.png (8 iPad App Store images, 2048x2732)
   ※ 使い方ガイド（SetupScreen）の画像も iphone/ のものを使う
+
+App Store 掲載画像はデザイン画像（モックアップ）で作る（Issue #70）。
+  - 手書き風アイコンとタイトルロゴは scripts/render_sketch_icons.js がアプリのコンポーネント
+    （components/icons/*.tsx）から PNG に書き出したものを使う（Node・npm ci 済み・Playwright の Chromium が必要）
+  - 文字は Noto Sans JP / M PLUS Rounded 1c を npm pack で .cache/fonts/ に取得して使う
+    （取得できない場合は IPA ゴシックで代替）
+
+Usage:
+  python3 generate_assets.py               # すべて生成
+  python3 generate_assets.py --promos-only # 掲載画像だけ生成
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -304,8 +314,123 @@ def generate_favicon(output_path, size=48):
 
 
 # ══════════════════════════════════════════════
-# Promotional Screenshots – accurate app mockups
+# App Store 掲載画像（デザイン画像 / モックアップ）  Issue #70
 # ══════════════════════════════════════════════
+#
+# 画面は React Native のスタイル値（dp）をそのまま使って描く。アイコンとタイトルロゴは
+# scripts/render_sketch_icons.js でアプリのコンポーネント（components/icons/*.tsx）から PNG に
+# 書き出したものを貼り込むため、アプリの表示と同じ絵柄になる。
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_CACHE_DIR = os.path.join(ROOT_DIR, '.cache', 'fonts')
+
+# 掲載画像用のフォント（npm の @expo-google-fonts から取得し .cache/fonts/ に置く。取得できなければ IPA ゴシック）
+FONT_PACKAGES = [
+    ('@expo-google-fonts/noto-sans-jp@0.4.4', {
+        'package/400Regular/NotoSansJP_400Regular.ttf': 'NotoSansJP-Regular.ttf',
+        'package/700Bold/NotoSansJP_700Bold.ttf': 'NotoSansJP-Bold.ttf',
+    }),
+    ('@expo-google-fonts/m-plus-rounded-1c@0.4.4', {
+        'package/700Bold/MPLUSRounded1c_700Bold.ttf': 'MPLUSRounded1c-Bold.ttf',
+        'package/800ExtraBold/MPLUSRounded1c_800ExtraBold.ttf': 'MPLUSRounded1c-ExtraBold.ttf',
+    }),
+]
+
+
+def ensure_promo_fonts():
+    """掲載画像用のフォントを用意する。取得に失敗した場合は IPA ゴシックで代替する。"""
+    import subprocess
+    import tarfile
+    import tempfile
+    os.makedirs(FONT_CACHE_DIR, exist_ok=True)
+    for spec, members in FONT_PACKAGES:
+        if all(os.path.exists(os.path.join(FONT_CACHE_DIR, out)) for out in members.values()):
+            continue
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                name = subprocess.run(
+                    ['npm', 'pack', spec, '--silent', '--pack-destination', tmp],
+                    check=True, capture_output=True, text=True,
+                ).stdout.strip().splitlines()[-1]
+                with tarfile.open(os.path.join(tmp, name)) as tar:
+                    for member, out in members.items():
+                        src = tar.extractfile(member)
+                        with open(os.path.join(FONT_CACHE_DIR, out), 'wb') as f:
+                            f.write(src.read())
+            print(f"Fetched fonts: {spec}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] フォントを取得できませんでした（{spec}）: {e}。IPA ゴシックで代替します")
+
+    def pick(name):
+        p = os.path.join(FONT_CACHE_DIR, name)
+        return p if os.path.exists(p) else FONT_JP
+
+    return {
+        'regular': pick('NotoSansJP-Regular.ttf'),
+        'bold': pick('NotoSansJP-Bold.ttf'),
+        'logo': pick('MPLUSRounded1c-Bold.ttf'),
+        'caption': pick('MPLUSRounded1c-ExtraBold.ttf'),
+    }
+
+
+PROMO_FONTS = {}
+_font_cache = {}
+
+
+def pfont(kind, px):
+    """kind: 'regular' | 'bold' | 'caption'"""
+    key = (kind, px)
+    if key not in _font_cache:
+        _font_cache[key] = ImageFont.truetype(PROMO_FONTS.get(kind, FONT_JP), px)
+    return _font_cache[key]
+
+
+# ──────────────────────────────────────────────
+# アプリのアイコン（components/icons/*.tsx を PNG 化）
+# ──────────────────────────────────────────────
+
+ICON_SPECS = [
+    ('tile', 'TileIcon', {}),
+    ('fan', 'TileFanIcon', {}),
+    ('medal1', 'MedalIcon', {'rank': 1}),
+    ('medal2', 'MedalIcon', {'rank': 2}),
+    ('medal3', 'MedalIcon', {'rank': 3}),
+    ('flag', 'GoalFlagIcon', {}),
+    ('celebrate', 'CelebrateIcon', {}),
+    ('celebrate_chip', 'CelebrateIcon', {'color': '#856404'}),
+    ('broadcast', 'BroadcastIcon', {}),
+    ('broadcast_dark', 'BroadcastIcon', {'color': '#3e2723'}),
+    ('send', 'SendIcon', {}),
+    ('pencil', 'PencilIcon', {}),
+    ('star_on', 'StarIcon', {'filled': True}),
+    ('star_off', 'StarIcon', {}),
+]
+ICON_RENDER_PX = 400
+LOGO_RENDER_PX = 1600
+
+ICONS = {}
+
+
+def render_app_icons():
+    """Node でアプリのアイコンとタイトルロゴを PNG に書き出して読み込む。"""
+    import json
+    import subprocess
+    import tempfile
+    specs = [{'name': n, 'component': c, 'props': p, 'px': ICON_RENDER_PX} for n, c, p in ICON_SPECS]
+    specs.append({'name': 'logo', 'component': 'TitleLogo', 'props': {'width': 320}, 'px': LOGO_RENDER_PX})
+    with tempfile.TemporaryDirectory() as tmp:
+        spec_path = os.path.join(tmp, 'spec.json')
+        with open(spec_path, 'w') as f:
+            json.dump(specs, f)
+        out_dir = os.path.join(tmp, 'icons')
+        cmd = ['node', os.path.join(ROOT_DIR, 'scripts', 'render_sketch_icons.js'), spec_path, out_dir]
+        if PROMO_FONTS.get('logo') and PROMO_FONTS['logo'] != FONT_JP:
+            cmd.append(PROMO_FONTS['logo'])
+        subprocess.run(cmd, check=True, cwd=ROOT_DIR)
+        for spec in specs:
+            ICONS[spec['name']] = Image.open(os.path.join(out_dir, spec['name'] + '.png')).convert('RGBA')
+    print(f"Rendered {len(ICONS)} app icons from components/icons")
+
 
 # ──────────────────────────────────────────────
 # Device configurations
@@ -322,903 +447,869 @@ class DeviceConfig:
         self.is_tablet = is_tablet
 
 
-IPHONE = DeviceConfig(1080, 2340, 1242, 2688, 375, False)
-IPAD = DeviceConfig(1536, 2048, 2048, 2732, 590, True)
+# iPhone 6.5インチ（1242×2688）/ iPad 12.9インチ（2048×2732）
+IPHONE = DeviceConfig(1179, 2556, 1242, 2688, 393, False)
+IPAD = DeviceConfig(1536, 2048, 2048, 2732, 540, True)
+
+# 画面の色（React Native のスタイル値）
+C_BLUE_TOP = (30, 60, 114)          # #1e3c72
+C_BLUE_BOTTOM = (42, 82, 152)       # #2a5298
+C_YELLOW_TOP = (249, 168, 37)       # #f9a825
+C_YELLOW_BOTTOM = (253, 216, 53)    # #fdd835
+C_LIVE_TEXT = (62, 39, 35)          # #3e2723
+C_LIVE_BORDER = (245, 127, 23)      # #f57f17
+C_CHIP_CARD = (255, 236, 179)       # #ffecb3
+C_CHIP_ROW = (255, 243, 205)        # #fff3cd
+C_CHIP_TEXT = (133, 100, 4)         # #856404
+C_ROW_BG = (248, 249, 250)          # #f8f9fa
+C_LIVE_CARD = (255, 248, 225)       # #fff8e1
 
 
-class PhoneScreen:
-    """Helper to draw pixel-accurate app screen mockups."""
+def rgba(color, alpha=1.0):
+    return (color[0], color[1], color[2], int(round(255 * alpha)))
 
-    def __init__(self, config=IPHONE):
+
+WHITE_A = lambda a: (255, 255, 255, int(round(255 * a)))  # noqa: E731
+
+
+class Screen:
+    """アプリ画面のモックアップ。座標・サイズはすべて dp で指定する。"""
+
+    def __init__(self, config, live=False):
+        self.config = config
         self.w = config.screen_w
         self.h = config.screen_h
-        self.base_dp = config.base_dp
-        self.img = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 0))
-        draw_gradient_bg(self.img, BG_DARK, BG_MED)
-        self.draw = ImageDraw.Draw(self.img)
-        self.pad = int(self.w * 0.042)  # ~16px at 375dp
-        self.y = int(self.h * 0.02)     # start below status area
+        self.scale = config.screen_w / config.base_dp
+        self.wdp = config.base_dp
+        self.hdp = config.screen_h / self.scale
+        self.live = live
+        self.bg = (C_YELLOW_TOP, C_YELLOW_BOTTOM) if live else (C_BLUE_TOP, C_BLUE_BOTTOM)
+        self.img = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 255))
+        draw_gradient_bg(self.img, *self.bg)
+        self.status_h = 24 if config.is_tablet else 54
+        self.top = self.status_h  # SafeArea の下端
 
-    def _s(self, dp):
-        """Scale dp to pixels."""
-        return int(dp * self.w / self.base_dp)
+    # ---- 基本 ----
+    def px(self, dp):
+        return int(round(dp * self.scale))
 
-    def draw_status_bar(self):
-        """Draw iOS-style status bar."""
-        d = self.draw
-        sf = font(self._s(12), bold=True)
-        d.text((self._s(20), self._s(6)), "9:41", fill=WHITE, font=sf)
-        # battery
-        bx = self.w - self._s(35)
-        by = self._s(8)
-        bw, bh = self._s(22), self._s(10)
-        d.rounded_rectangle((bx, by, bx + bw, by + bh), radius=2, fill=WHITE)
-        d.rectangle((bx + bw, by + bh // 4, bx + bw + 2, by + bh * 3 // 4), fill=WHITE)
-        self.y = self._s(28)
+    def _composite(self, layer, x0, y0):
+        """layer を (x0, y0) に重ねる（画面外にはみ出す部分は切り取る）。"""
+        lw, lh = layer.size
+        sx, sy = max(0, -x0), max(0, -y0)
+        dx, dy = max(0, x0), max(0, y0)
+        w = min(lw - sx, self.w - dx)
+        h = min(lh - sy, self.h - dy)
+        if w <= 0 or h <= 0:
+            return
+        self.img.alpha_composite(layer, dest=(dx, dy), source=(sx, sy, sx + w, sy + h))
 
-    def draw_card_shadow(self, x, y, w, h, radius=None):
-        """Draw a card shadow under a card region."""
-        if radius is None:
-            radius = self._s(12)
-        shadow = Image.new('RGBA', self.img.size, (0, 0, 0, 0))
-        sd = ImageDraw.Draw(shadow)
-        sd.rounded_rectangle(
-            (x + 2, y + 4, x + w + 2, y + h + 4),
-            radius=radius, fill=(0, 0, 0, 40)
-        )
-        shadow = shadow.filter(ImageFilter.GaussianBlur(8))
-        self.img = Image.alpha_composite(self.img, shadow)
-        self.draw = ImageDraw.Draw(self.img)
+    def rect(self, x, y, w, h, r=0, fill=None, outline=None, width=0):
+        X, Y, W, H = self.px(x), self.px(y), self.px(w), self.px(h)
+        if W <= 0 or H <= 0:
+            return
+        layer = Image.new('RGBA', (W + 2, H + 2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        d.rounded_rectangle((0, 0, W - 1, H - 1), radius=self.px(r), fill=fill,
+                            outline=outline, width=self.px(width) if outline else 0)
+        self._composite(layer, X, Y)
 
-    def draw_card(self, x, y, w, h, radius=None):
-        """Draw a white card with shadow."""
-        if radius is None:
-            radius = self._s(12)
-        self.draw_card_shadow(x, y, w, h, radius)
-        rrect(self.draw, (x, y, x + w, y + h), radius, fill=CARD_BG)
+    def line(self, x1, y1, x2, y2, color, width=1):
+        X1, Y1, X2, Y2 = self.px(x1), self.px(y1), self.px(x2), self.px(y2)
+        Wd = max(1, self.px(width))
+        x0, y0 = min(X1, X2) - Wd, min(Y1, Y2) - Wd
+        layer = Image.new('RGBA', (abs(X2 - X1) + 2 * Wd + 1, abs(Y2 - Y1) + 2 * Wd + 1), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).line([(X1 - x0, Y1 - y0), (X2 - x0, Y2 - y0)], fill=color, width=Wd)
+        self._composite(layer, x0, y0)
 
-    def draw_section_title(self, x, y, w, text, has_right=None):
-        """Draw section title with blue underline, matching the app."""
-        d = self.draw
-        f_title = font(self._s(16), jp=True)
-        d.text((x, y), text, fill=SECTION_TITLE_COLOR, font=f_title)
-        line_y = y + self._s(24)
-        d.line([(x, line_y), (x + w, line_y)], fill=SECTION_BORDER, width=max(2, self._s(2)))
-        if has_right:
-            f_right = font(self._s(12), jp=True)
-            tw, _ = text_size(d, has_right, f_right)
-            d.text((x + w - tw, y + self._s(4)), has_right, fill=GREEN, font=f_right)
-        return line_y + self._s(8)
+    def shadow(self, x, y, w, h, r, dy=2, blur=4, alpha=0.1):
+        X, Y, W, H = self.px(x), self.px(y + dy), self.px(w), self.px(h)
+        B = self.px(blur)
+        pad = B * 3
+        layer = Image.new('RGBA', (W + 2 * pad, H + 2 * pad), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).rounded_rectangle((pad, pad, pad + W, pad + H), radius=self.px(r),
+                                                fill=(0, 0, 0, int(255 * alpha)))
+        layer = layer.filter(ImageFilter.GaussianBlur(max(1, B)))
+        self._composite(layer, X - pad, Y - pad)
 
-    def draw_drumroll_input(self, x, y, label, value, box_w=None):
-        """Draw a DrumRollInput component matching DrumRollInput.tsx exactly."""
-        d = self.draw
-        if box_w is None:
-            box_w = self._s(155)
-        # Label
-        lf = font(self._s(12), jp=True)
-        d.text((x, y), label, fill=DARK_TEXT, font=lf)
-        y += self._s(18)
+    def card(self, x, y, w, h, r=12, fill=WHITE, outline=None, width=0, shadow=True):
+        if shadow:
+            self.shadow(x, y, w, h, r)
+        self.rect(x, y, w, h, r, fill=fill, outline=outline, width=width)
 
-        btn_h = self._s(26)
-        btn_gap = self._s(4)
-        bf = font(self._s(11), bold=True)
+    def font(self, size, bold=True):
+        return pfont('bold' if bold else 'regular', self.px(size))
 
-        # Top row: [+10] [+1]
-        top_btns = ["+10", "+1"]
-        for i, bl in enumerate(top_btns):
-            bx = x + i * (box_w // 2 + btn_gap // 2)
-            bw = box_w // 2 - btn_gap // 2
-            rrect(d, (bx, y, bx + bw, y + btn_h), self._s(4),
-                   fill=DRUMROLL_BTN_BG, outline=DRUMROLL_BTN_BORDER, width=1)
-            tw, _ = text_size(d, bl, bf)
-            d.text((bx + (bw - tw) // 2, y + (btn_h - self._s(12)) // 2), bl,
-                   fill=DRUMROLL_BTN_TEXT, font=bf)
-        y += btn_h + btn_gap
+    def text_w(self, s, size, bold=True, spacing=0):
+        f = self.font(size, bold)
+        return f.getlength(s) / self.scale + spacing * max(0, len(s) - 1)
 
-        # Display
-        disp_h = self._s(40)
-        rrect(d, (x, y, x + box_w, y + disp_h), self._s(6),
-               fill=WHITE, outline=DRUMROLL_DISPLAY_BORDER, width=2)
-        vf = font(self._s(18), bold=True)
-        val_str = f"+{value}" if value > 0 else str(value)
-        val_color = GREEN if value > 0 else RED if value < 0 else SECTION_TITLE_COLOR
-        tw, _ = text_size(d, val_str, vf)
-        d.text((x + (box_w - tw) // 2, y + (disp_h - self._s(18)) // 2), val_str,
-               fill=val_color, font=vf)
-        y += disp_h + btn_gap
+    def text(self, x, y, s, size, color, bold=True, anchor='lm', spacing=0):
+        """y は行の中心（anchor の 'm'）または上端（'a'）。spacing は字間（dp）。"""
+        if spacing:
+            # 字間ありは1文字ずつ並べる（anchor の横方向だけ反映）
+            total = self.text_w(s, size, bold, spacing)
+            sx = x - (total / 2 if anchor[0] == 'm' else total if anchor[0] == 'r' else 0)
+            for ch in s:
+                self.text(sx, y, ch, size, color, bold, 'l' + anchor[1])
+                sx += self.text_w(ch, size, bold) + spacing
+            return
+        f = self.font(size, bold)
+        X, Y = self.px(x), self.px(y)
+        tmp = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        x0, y0, x1, y1 = tmp.textbbox((X, Y), s, font=f, anchor=anchor)
+        pad = 4
+        layer = Image.new('RGBA', (x1 - x0 + 2 * pad, y1 - y0 + 2 * pad), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).text((X - x0 + pad, Y - y0 + pad), s, font=f, fill=color, anchor=anchor)
+        self._composite(layer, x0 - pad, y0 - pad)
 
-        # Bottom row: [-1] [-10]
-        bot_btns = ["-1", "-10"]
-        for i, bl in enumerate(bot_btns):
-            bx = x + i * (box_w // 2 + btn_gap // 2)
-            bw = box_w // 2 - btn_gap // 2
-            rrect(d, (bx, y, bx + bw, y + btn_h), self._s(4),
-                   fill=DRUMROLL_BTN_BG, outline=DRUMROLL_BTN_BORDER, width=1)
-            tw2, _ = text_size(d, bl, bf)
-            d.text((bx + (bw - tw2) // 2, y + (btn_h - self._s(12)) // 2), bl,
-                   fill=DRUMROLL_BTN_TEXT, font=bf)
-        return y + btn_h
+    def wrap(self, s, size, max_w, bold=True):
+        """日本語向けの1文字単位の折り返し（行頭禁則つき）。"""
+        lines, cur = [], ''
+        for ch in s:
+            if ch == '\n':
+                lines.append(cur)
+                cur = ''
+                continue
+            if cur and self.text_w(cur + ch, size, bold) > max_w and ch not in '、。）」・ー':
+                lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        if cur:
+            lines.append(cur)
+        return lines
 
-    def draw_button(self, x, y, w, h, text, bg_color, text_color=WHITE):
-        """Draw a rounded button."""
-        d = self.draw
-        rrect(d, (x, y, x + w, y + h), self._s(6), fill=bg_color)
-        bf = font(self._s(14), jp=True)
-        tw, _ = text_size(d, text, bf)
-        d.text((x + (w - tw) // 2, y + (h - self._s(14)) // 2), text,
-               fill=text_color, font=bf)
+    def paragraph(self, x, y, s, size, color, max_w, line_h, bold=False, align='l'):
+        lines = self.wrap(s, size, max_w, bold)
+        for i, ln in enumerate(lines):
+            cy = y + line_h * i + line_h / 2
+            if align == 'm':
+                self.text(x + max_w / 2, cy, ln, size, color, bold, 'mm')
+            else:
+                self.text(x, cy, ln, size, color, bold, 'lm')
+        return y + line_h * len(lines)
 
-    def get_image(self):
+    def icon(self, name, x, y, size):
+        src = ICONS[name]
+        W = self.px(size)
+        H = int(round(W * src.height / src.width))
+        self._composite(src.resize((W, H), Image.LANCZOS), self.px(x), self.px(y))
+
+    # ---- 仕上げ ----
+    def finish(self):
+        """ステータスバー（スクロールした内容の上に背景色ごと描く）。"""
+        strip = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 255))
+        draw_gradient_bg(strip, *self.bg)
+        self.img.paste(strip.crop((0, 0, self.w, self.px(self.status_h))), (0, 0))
+        fg = C_LIVE_TEXT if self.live else WHITE
+        if self.config.is_tablet:
+            cy, x_time = 12, 22
+            self.text(x_time, cy, '9:41', 12, fg, True, 'lm')
+            self.text(x_time + 36, cy, '11月22日(日)', 12, fg, True, 'lm')
+        else:
+            cy, x_time = 29, 52
+            self.text(x_time, cy, '9:41', 16, fg, True, 'mm')
+        # 電波・Wi-Fi・電池
+        rx = self.wdp - (22 if self.config.is_tablet else 30)
+        bw, bh = 24, 11.5
+        self.rect(rx - bw, cy - bh / 2, bw, bh, 3.5, outline=fg[:3] + (110,), width=1)
+        self.rect(rx - bw + 2, cy - bh / 2 + 2, bw - 4 - 4, bh - 4, 2, fill=fg)
+        self.rect(rx + 1, cy - 2, 1.5, 4, 0.7, fill=fg[:3] + (110,))
+        wx = rx - bw - 12
+        for i, rr in enumerate([8, 5.3, 2.6]):
+            self._wifi_arc(wx, cy + 4, rr, fg)
+        sx = wx - 12 - 20
+        for i in range(4):
+            bh2 = 3.5 + i * 2.3
+            self.rect(sx + i * 4.6, cy + 5 - bh2, 3, bh2, 1, fill=fg)
+        if not self.config.is_tablet:
+            # Dynamic Island
+            iw, ih = 124, 36
+            self.rect((self.wdp - iw) / 2, 11, iw, ih, ih / 2, fill=(0, 0, 0, 255))
         return self.img
 
+    def _wifi_arc(self, cx, cy, r, color):
+        X, Y, R = self.px(cx), self.px(cy), self.px(r)
+        layer = Image.new('RGBA', (2 * R + 4, 2 * R + 4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        if r < 3:
+            d.pieslice((2, 2, 2 * R + 2, 2 * R + 2), 225, 315, fill=color)
+        else:
+            d.arc((2, 2, 2 * R + 2, 2 * R + 2), 225, 315, fill=color, width=self.px(1.8))
+        self._composite(layer, X - R - 2, Y - R - 2)
 
-def create_promo_frame(phone_img, title_text=None, subtitle_text=None, config=IPHONE):
-    """Wrap a phone/tablet screen image in a promo frame with title."""
-    promo_w, promo_h = config.promo_w, config.promo_h
-    screen_w, screen_h = config.screen_w, config.screen_h
 
-    img = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 0))
-    # Dark top for text contrast → lighter bottom so device frame stands out
-    draw_gradient_bg(img, (10, 20, 55), (50, 95, 165))
-    draw = ImageDraw.Draw(img)
+# ──────────────────────────────────────────────
+# サンプルの対局データ（合計・順位はここから計算する）
+# ──────────────────────────────────────────────
 
-    top_y = int(promo_h * 0.03)
+PLAYERS = ['太郎', '花子', '次郎', '美咲']
+GAME_DATE = '2026/11/22'
+# (半荘, [点数], 記録時刻)
+SCORE_ROUNDS = [
+    (1, [45, -5, 10, -50], '11月22日19:52'),
+    (2, [-20, 38, 4, -22], '11月22日20:31'),
+    (3, [32, -15, -8, -9], '11月22日21:08'),
+]
+# ([チップ], 記録時刻, 直後の半荘)
+CHIP_ROUNDS = [
+    ([-2, 5, 0, -3], '11月22日20:33', 2),
+]
+RANK_COLORS = {1: GOLD, 2: SILVER, 3: BRONZE, 4: RANK_GRAY}
+LIVE_EXPIRES = '2026/11/24 19:40'      # リアルタイム共有の有効期限（開始から48時間）
+SHARE_EXPIRES = '2026/11/25 10:05'     # 終了済みゲームの共有コードの有効期限（発行から48時間）
+LIVE_CODE = '482915'
+SHARE_CODE = '381604'
 
-    # Title text (large enough to be visible on App Store listing)
-    if title_text:
-        title_font_size = int(promo_w * 0.09)
-        tf = font(title_font_size, jp=True)
-        draw_centered_text(draw, title_text, promo_w // 2, top_y, tf, WHITE)
-        top_y += int(title_font_size * 1.5)
 
-    if subtitle_text:
-        sub_font_size = int(promo_w * 0.065)
-        sf = font(sub_font_size, jp=True)
-        draw_centered_text(draw, subtitle_text, promo_w // 2, top_y, sf, (255, 225, 130))
-        top_y += int(sub_font_size * 1.5)
+def ranks_of(points):
+    order = sorted(range(len(points)), key=lambda i: -points[i])
+    ranks = [0] * len(points)
+    for r, i in enumerate(order):
+        ranks[i] = r + 1
+    return ranks
 
-    # Device frame (smaller to give more space to text)
-    phone_w = int(promo_w * 0.62)
-    phone_h = int(phone_w * screen_h / screen_w)
-    phone_scaled = phone_img.resize((phone_w, phone_h), Image.LANCZOS)
 
-    # Bezel dimensions (iPad has slightly thicker bezels, less rounded corners)
-    if config.is_tablet:
-        bezel = int(phone_w * 0.012)
-        corner_r = int(phone_w * 0.03)
+def build_records(n_rounds, n_chips):
+    """記録済みの半荘数・チップ記録数から、履歴行と総合スコアを作る。"""
+    rows = []
+    for hanchan, pts, t in SCORE_ROUNDS[:n_rounds]:
+        rows.append(('score', hanchan, pts, ranks_of(pts), t))
+    for chips, t, after in CHIP_ROUNDS[:n_chips]:
+        rows.append(('chip', after, chips, None, t))
+    # 新しい順（チップは直後の半荘のあと）
+    rows.sort(key=lambda r: (r[1], r[0] == 'chip'), reverse=True)
+    totals = [0] * len(PLAYERS)
+    chip_totals = [0] * len(PLAYERS)
+    rank_counts = [{r: 0 for r in range(1, len(PLAYERS) + 1)} for _ in PLAYERS]
+    for kind, _, vals, rks, _ in rows:
+        for i, v in enumerate(vals):
+            totals[i] += v
+            if kind == 'chip':
+                chip_totals[i] += v
+            else:
+                rank_counts[i][rks[i]] += 1
+    return rows, totals, chip_totals, rank_counts
+
+
+def fmt_signed(v):
+    return f"+{v}" if v > 0 else str(v)
+
+
+def value_color(v, neutral=GRAY_TEXT):
+    return GREEN if v > 0 else RED if v < 0 else neutral
+
+
+# ──────────────────────────────────────────────
+# 共通パーツ（アプリのコンポーネントに対応）
+# ──────────────────────────────────────────────
+
+PAD = 16  # scrollContent の padding
+
+
+def section_title(sc, x, y, w, title, icon=None, right=None, right_color=GREEN, size=16, mb=12):
+    """下線付きの見出し（sectionTitleRow / sectionTitle）。次の要素の y を返す。"""
+    line_h = size * 1.25
+    cy = y + max(line_h, 20 if icon else 0) / 2
+    tx = x
+    if icon:
+        sc.icon(icon, x, cy - 10, 20)
+        tx = x + 26
+    sc.text(tx, cy, title, size, SECTION_TITLE_COLOR, True, 'lm')
+    if right:
+        sc.text(x + w, cy + 1, right, 12, right_color, False, 'rm')
+    by = y + max(line_h, 20 if icon else 0) + 6
+    sc.rect(x, by, w, 2, fill=C_BLUE_BOTTOM)
+    return by + 2 + mb
+
+
+def draw_badge(sc, x, y, label, color, size=10, pad_h=6, pad_v=3, r=10):
+    w = sc.text_w(label, size) + 2 * pad_h
+    h = size * 1.25 + 2 * pad_v
+    sc.rect(x, y, w, h, r, fill=color)
+    sc.text(x + w / 2, y + h / 2, label, size, WHITE, True, 'mm')
+    return w, h
+
+
+def drum_roll(sc, x, y, w, label, value):
+    """DrumRollInput。高さを返す。"""
+    sc.text(x, y + 10, label, 16, DARK_TEXT, True, 'lm')
+    y += 20 + 6
+    bw = (w - 4) / 2
+    bh = 6 * 2 + 15 + 2
+    for row_y, labels in ((y, ('+10', '+1')), (y + bh + 4 + 46 + 4, ('-10', '-1'))):
+        for i, lb in enumerate(labels):
+            bx = x + i * (bw + 4)
+            sc.rect(bx, row_y, bw, bh, 4, fill=DRUMROLL_BTN_BG, outline=DRUMROLL_BTN_BORDER, width=1)
+            sc.text(bx + bw / 2, row_y + bh / 2, lb, 12, DRUMROLL_BTN_TEXT, True, 'mm')
+    dy = y + bh + 4
+    sc.rect(x, dy, w, 46, 6, fill=WHITE, outline=C_BLUE_BOTTOM, width=2)
+    sc.text(x + w / 2, dy + 23, fmt_signed(value), 18, value_color(value, SECTION_TITLE_COLOR), True, 'mm')
+    return 26 + bh + 4 + 46 + 4 + bh
+
+
+def input_card(sc, y, title, icon, values, record_label, record_color, fill=WHITE):
+    """ポイント入力 / チップ移動 のカード。カード下端の y を返す。"""
+    x, w = PAD, sc.wdp - 2 * PAD
+    inner = w - 32
+    col_w = inner * 0.48
+    dr_h = 26 + 29 + 4 + 46 + 4 + 29
+    h = 16 + 26 + 12 + 2 * (dr_h + 8) + 8 + 12 + 41 + 16
+    sc.card(x, y, w, h, fill=fill)
+    total = sum(values)
+    cy = section_title(sc, x + 16, y + 16, inner, title, icon,
+                       f"合計: {fmt_signed(total) if total else 0}", GREEN if total == 0 else RED)
+    for i, (name, v) in enumerate(zip(PLAYERS, values)):
+        dx = x + 16 + (i % 2) * (col_w + 8)
+        dy = cy + (i // 2) * (dr_h + 8 + 8)
+        drum_roll(sc, dx, dy, col_w, name, v)
+    by = cy + 2 * (dr_h + 8 + 8) - 8 + 12
+    rw = (inner - 8) / 3
+    sc.rect(x + 16, by, rw, 41, 6, fill=WHITE, outline=DRUMROLL_BTN_BORDER, width=1)
+    sc.text(x + 16 + rw / 2, by + 20.5, 'リセット', 14, GRAY_TEXT, True, 'mm')
+    sc.rect(x + 16 + rw + 8, by, rw * 2, 41, 6, fill=record_color)
+    sc.text(x + 16 + rw + 8 + rw, by + 20.5, record_label, 14, WHITE, True, 'mm')
+    return y + h
+
+
+def summary_cards(sc, y, totals, chip_totals, rank_counts):
+    """SummaryCards（総合スコア）。カード下端の y を返す。"""
+    x, w = PAD, sc.wdp - 2 * PAD
+    inner = w - 32
+    cw = inner * 0.48
+    gap = 8
+    # 先に高さを計算する（順位バッジは折り返す）
+    def badge_rows(i):
+        bx, rows = 0, 1
+        for r in range(1, len(PLAYERS) + 1):
+            bw = sc.text_w(f"{r}位 × {rank_counts[i][r]}", 10) + 12
+            if bx and bx + bw > cw - 28:
+                rows += 1
+                bx = 0
+            bx += bw + 4
+        return rows
+    item_h = []
+    for i in range(len(PLAYERS)):
+        hh = 12 + 18 + 6 + 6 + 25 + 6 + 6 + badge_rows(i) * 18.5 + (badge_rows(i) - 1) * 4
+        if chip_totals[i]:
+            hh += 6 + 14
+        item_h.append(hh + 12)
+    row_h = [max(item_h[0], item_h[1]), max(item_h[2], item_h[3])]
+    h = 16 + 20 + 6 + 2 + 12 + row_h[0] + gap + row_h[1] + 16
+    sc.card(x, y, w, h)
+    cy = section_title(sc, x + 16, y + 16, inner, '総合スコア')
+    for i, name in enumerate(PLAYERS):
+        sx = x + 16 + (i % 2) * (cw + gap)
+        sy = cy + (0 if i < 2 else row_h[0] + gap)
+        sc.rect(sx, sy, cw, row_h[i // 2], 8, fill=C_ROW_BG, outline=CARD_BORDER, width=2)
+        ix, iy = sx + 14, sy + 14
+        sc.text(ix, iy + 9, name, 14, DARK_TEXT, True, 'lm')
+        iy += 18 + 6 + 6
+        sc.text(ix, iy + 12.5, fmt_signed(totals[i]), 20, value_color(totals[i]), True, 'lm')
+        iy += 25 + 6 + 6
+        bx = 0
+        for r in range(1, len(PLAYERS) + 1):
+            label = f"{r}位 × {rank_counts[i][r]}"
+            bw = sc.text_w(label, 10) + 12
+            if bx and bx + bw > cw - 28:
+                bx = 0
+                iy += 18.5 + 4
+            draw_badge(sc, ix + bx, iy, label, RANK_COLORS[r])
+            bx += bw + 4
+        iy += 18.5
+        if chip_totals[i]:
+            sc.text(ix, iy + 6 + 7, f"チップ: {fmt_signed(chip_totals[i])}", 11, GRAY_TEXT, False, 'lm')
+    return y + h
+
+
+def history_table(sc, y, rows, editable):
+    """HistoryTable（記録履歴）。カード下端の y を返す。"""
+    x, w = PAD, sc.wdp - 2 * PAD
+    inner = w - 32
+    row_heights = []
+    for kind, *_ in rows:
+        row_heights.append(10 + 17 + 8 + (14 + 4 + 18 + 4 + 16 if kind == 'score' else 14 + 4 + 16) + 10)
+    h = 16 + 20 + 6 + 2 + 4 + (14 + 10 if editable else 6) + sum(rh + 8 for rh in row_heights) + 8
+    sc.card(x, y, w, h)
+    cy = section_title(sc, x + 16, y + 16, inner, f"記録履歴（{GAME_DATE}）", mb=4)
+    if editable:
+        sc.text(x + 16, cy + 7, '※ 長押しで記録を削除できます', 11, HINT_TEXT, False, 'lm')
+        cy += 14 + 10
     else:
-        bezel = int(phone_w * 0.015)
-        corner_r = int(phone_w * 0.055)
+        cy += 6
+    cell_w = inner * 0.23
+    for (kind, hanchan, vals, rks, t), rh in zip(rows, row_heights):
+        chip = kind == 'chip'
+        sc.rect(x + 16, cy, inner, rh, 8, fill=C_CHIP_ROW if chip else C_ROW_BG,
+                outline=YELLOW if chip else CARD_BORDER, width=1)
+        hx, hy = x + 16 + 10, cy + 10 + 8.5
+        if chip:
+            sc.icon('celebrate_chip', hx, hy - 8, 16)
+            sc.text(hx + 20, hy, 'チップ', 14, C_CHIP_TEXT, True, 'lm')
+        else:
+            sc.text(hx, hy, f"第{hanchan}半荘", 14, DARK_TEXT, True, 'lm')
+        sc.text(x + 16 + inner - 10, hy, t, 11, C_CHIP_TEXT if chip else GRAY_TEXT, False, 'rm')
+        gy = cy + 10 + 17 + 8
+        gx = x + 16 + 10
+        for i, name in enumerate(PLAYERS):
+            ccx = gx + i * (cell_w + 8) + cell_w / 2
+            sc.text(ccx, gy + 7, name, 11, MED_TEXT, True, 'mm')
+            if chip:
+                sc.text(ccx, gy + 18 + 8, fmt_signed(vals[i]), 13, value_color(vals[i], HINT_TEXT), True, 'mm')
+            else:
+                label = f"{rks[i]}位"
+                bw = sc.text_w(label, 10) + 16
+                draw_badge(sc, ccx - bw / 2, gy + 18, label, RANK_COLORS[rks[i]], pad_h=8)
+                sc.text(ccx, gy + 18 + 18.5 + 4 + 8, fmt_signed(vals[i]), 13, DARK_TEXT, True, 'mm')
+        cy += rh + 8
+    return y + h
 
-    px = (promo_w - phone_w) // 2 - bezel
-    py = top_y + int(promo_h * 0.02)
 
-    # Shadow
-    shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    sd.rounded_rectangle(
-        (px + 12, py + 12, px + phone_w + bezel * 2 + 12, py + phone_h + bezel * 2 + 12),
-        radius=corner_r + bezel, fill=(0, 0, 0, 80)
-    )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(30))
-    img = Image.alpha_composite(img, shadow)
+def header_button(sc, x, y, w, h, label, fill, fg=WHITE, outline=None, size=14):
+    sc.rect(x, y, w, h, 6, fill=fill, outline=outline, width=1 if outline else 0)
+    sc.text(x + w / 2, y + h / 2, label, size, fg, True, 'mm')
+
+
+def back_header(sc, y, title, right=None, fg=WHITE, back_fill=WHITE_A(0.2), title_size=24):
+    """← 戻る | タイトル | 右側。ヘッダー下端の y を返す。"""
+    bw = sc.text_w('← 戻る', 14) + 24
+    h = 34
+    header_button(sc, PAD, y + (title_size * 1.25 - h) / 2 + 2, bw, h - 4, '← 戻る', back_fill, fg)
+    hh = title_size * 1.25
+    sc.text(sc.wdp / 2, y + hh / 2, title, title_size, fg, True, 'mm')
+    if right:
+        label, fill, rfg = right
+        rw = sc.text_w(label, 14) + 24
+        header_button(sc, sc.wdp - PAD - rw, y + (hh - 30) / 2, rw, 30, label, fill, rfg)
+    return y + hh
+
+
+def live_banner(sc, y, title, lines, icon, live_mode=False):
+    """liveBanner（共有中・閲覧中）。下端の y を返す。"""
+    x, w = PAD, sc.wdp - 2 * PAD
+    h = 12 + 20 + sum(4 + 15 for _ in lines) + 12
+    if live_mode:
+        sc.rect(x, y, w, h, 12, fill=WHITE_A(0.6), outline=C_LIVE_BORDER, width=2)
+        fg, sub = C_LIVE_TEXT, rgba(C_LIVE_TEXT, 0.85)
+    else:
+        sc.rect(x, y, w, h, 12, fill=WHITE_A(0.15), outline=WHITE_A(0.4), width=1)
+        fg, sub = WHITE, WHITE_A(0.85)
+    sc.icon(icon, x + 12, y + 12 + 1, 18)
+    sc.text(x + 12 + 24, y + 12 + 10, title, 15, fg, True, 'lm')
+    ly = y + 12 + 20
+    for ln in lines:
+        sc.text(x + 12, ly + 4 + 7.5, ln, 12, sub, False, 'lm')
+        ly += 4 + 15
+    return y + h
+
+
+def game_header(sc, y, hanchan):
+    """進行中ゲームのヘッダー（第N半荘 | 名前変更 | 中断 | ゲーム終了）。下端の y を返す。"""
+    h = 34
+    sc.text(PAD, y + h / 2, f"第{hanchan}半荘", 24, WHITE, True, 'lm')
+    labels = [('ゲーム終了', RED, RED), ('中断', WHITE_A(0.2), WHITE_A(0.4)), ('名前変更', WHITE_A(0.15), WHITE_A(0.4))]
+    rx = sc.wdp - PAD
+    for label, fill, border in labels:
+        extra = 13 + 4 if label == '名前変更' else 0
+        bw = sc.text_w(label, 13) + 20 + extra
+        bx = rx - bw
+        sc.rect(bx, y, bw, h, 6, fill=fill, outline=border, width=1)
+        if extra:
+            sc.icon('pencil', bx + 10, y + (h - 13) / 2, 13)
+        sc.text(bx + 10 + extra + (bw - 20 - extra) / 2, y + h / 2, label, 13, WHITE, True, 'mm')
+        rx = bx - 8
+    return y + h
+
+
+def live_start_button(sc, y):
+    x, w = PAD, sc.wdp - 2 * PAD
+    h = 14 + 22 + 4 + 15 + 14
+    sc.shadow(x, y, w, h, 10, alpha=0.25)
+    sc.rect(x, y, w, h, 10, fill=YELLOW_BTN)
+    label = 'リアルタイム共有を開始'
+    tw = sc.text_w(label, 16) + 20 + 8
+    sx = sc.wdp / 2 - tw / 2
+    sc.icon('broadcast_dark', sx, y + 14 + 1, 20)
+    sc.text(sx + 28, y + 14 + 11, label, 16, C_LIVE_TEXT, True, 'lm')
+    sc.text(sc.wdp / 2, y + 14 + 22 + 4 + 7.5, '同じ卓のメンバーがコードでスコアを閲覧できます', 12,
+            rgba(C_LIVE_TEXT, 0.8), False, 'mm')
+    return y + h
+
+
+YELLOW_BTN = (253, 216, 53)  # #fdd835
+
+
+def modal_overlay(sc, alpha=0.5):
+    layer = Image.new('RGBA', (sc.w, sc.h), (0, 0, 0, int(255 * alpha)))
+    sc.img.alpha_composite(layer)
+
+
+def code_modal(sc, title, desc, code, expires, buttons):
+    """共有コードのモーダル（shareModalContent）。"""
+    modal_overlay(sc)
+    mw = min(sc.wdp - 48, 460)
+    mx = (sc.wdp - mw) / 2
+    inner = mw - 48
+    desc_lines = sc.wrap(desc, 13, inner, False)
+    h = 24 + 25 + 12 + len(desc_lines) * 20 + 16 + 44 + 8 + 15 + 16 + len(buttons) * (48 + 8) - 8 + 24
+    my = (sc.hdp - h) / 2
+    sc.shadow(mx, my, mw, h, 16, dy=4, blur=8, alpha=0.3)
+    sc.rect(mx, my, mw, h, 16, fill=WHITE)
+    y = my + 24
+    sc.text(sc.wdp / 2, y + 12.5, title, 20, SECTION_TITLE_COLOR, True, 'mm')
+    y += 25 + 12
+    for ln in desc_lines:
+        sc.text(sc.wdp / 2, y + 10, ln, 13, LIGHT_TEXT, False, 'mm')
+        y += 20
+    y += 16
+    sc.text(sc.wdp / 2, y + 22, code, 36, SECTION_TITLE_COLOR, True, 'mm', spacing=6)
+    y += 44 + 8
+    sc.text(sc.wdp / 2, y + 7.5, f"有効期限: {expires}", 12, LIGHT_TEXT, False, 'mm')
+    y += 15 + 16
+    for label, fill, fg in buttons:
+        sc.rect(mx + 24, y, inner, 48, 8, fill=fill)
+        sc.text(sc.wdp / 2, y + 24, label, 16, fg, True, 'mm')
+        y += 48 + 8
+
+
+def finish_modal(sc, totals, rank_counts):
+    """FinishGameModal（ゲーム終了の確認）。"""
+    modal_overlay(sc)
+    mw = min(sc.wdp - 40, 450)
+    mx = (sc.wdp - mw) / 2
+    order = sorted(range(len(PLAYERS)), key=lambda i: -totals[i])
+    row_h = 10 + 18 + 6 + 15.5 + 10
+    head_h = 20 + 40 + 8 + 25 + 10 + 2
+    body_h = 20 + 2 * 20 + 16 + len(order) * (row_h + 8) - 8 + 20
+    foot_h = 20 + 41 + 20 + 1
+    h = head_h + body_h + foot_h
+    my = (sc.hdp - h) / 2
+    sc.shadow(mx, my, mw, h, 12, dy=4, blur=8, alpha=0.3)
+    sc.rect(mx, my, mw, h, 12, fill=WHITE)
+    sc.icon('flag', sc.wdp / 2 - 20, my + 20, 40)
+    sc.text(sc.wdp / 2, my + 20 + 40 + 8 + 12.5, 'ゲーム終了', 20, DARK_TEXT, True, 'mm')
+    sc.rect(mx, my + head_h - 2, mw, 2, fill=CARD_BORDER)
+    y = my + head_h + 20
+    for ln in ('ゲームを終了して最初の画面に戻りますか？', '記録は保存されます。'):
+        sc.text(sc.wdp / 2, y + 10, ln, 14, MED_TEXT, False, 'mm')
+        y += 20
+    y += 16
+    border = {0: YELLOW, 1: SILVER, 2: BRONZE}
+    for idx, i in enumerate(order):
+        rx, rw = mx + 20, mw - 40
+        sc.rect(rx, y, rw, row_h, 6, fill=(255, 251, 234) if idx == 0 else C_ROW_BG)
+        sc.rect(rx, y, 3, row_h, 0, fill=border.get(idx, CARD_BORDER))
+        nx = rx + 3 + 10
+        if idx < 3:
+            sc.icon(f"medal{idx + 1}", nx, y + 10, 18)
+            nx += 22
+        sc.text(nx, y + 10 + 9, PLAYERS[i], 14, DARK_TEXT, True, 'lm')
+        bx = rx + 13
+        for r in range(1, len(PLAYERS) + 1):
+            c = rank_counts[i][r]
+            if not c:
+                continue
+            bw, _ = draw_badge(sc, bx, y + 10 + 18 + 6, f"{r}位×{c}", RANK_COLORS[r], size=9, pad_v=2)
+            bx += bw + 4
+        sc.text(rx + rw - 10, y + row_h / 2, fmt_signed(totals[i]), 18, value_color(totals[i]), True, 'rm')
+        y += row_h + 8
+    fy = my + head_h + body_h
+    sc.rect(mx, fy, mw, 1, fill=CARD_BORDER)
+    bw = (mw - 40 - 10) / 2
+    for k, (label, fill) in enumerate((('キャンセル', GRAY_TEXT), ('終了する', RED))):
+        bx = mx + 20 + k * (bw + 10)
+        sc.rect(bx, fy + 21, bw, 41, 6, fill=fill)
+        sc.text(bx + bw / 2, fy + 21 + 20.5, label, 14, WHITE, True, 'mm')
+
+
+# ──────────────────────────────────────────────
+# 掲載画像の枠（キャッチコピー + 端末フレーム）
+# ──────────────────────────────────────────────
+
+def fit_font(draw, text, kind, size, max_w):
+    while size > 10:
+        f = pfont(kind, size)
+        if draw.textlength(text, font=f) <= max_w:
+            return f
+        size -= 2
+    return pfont(kind, size)
+
+
+def create_promo_frame(screen_img, title, subtitle, config):
+    promo_w, promo_h = config.promo_w, config.promo_h
+    img = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 255))
+    draw_gradient_bg(img, (14, 30, 70), (48, 96, 170))
+
+    # 端末の後ろの淡い光
+    glow = Image.new('RGBA', (promo_w, promo_h), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((promo_w * 0.05, promo_h * 0.28, promo_w * 0.95, promo_h * 0.9),
+                                 fill=(120, 170, 255, 60))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(promo_w * 0.08)))
+
     draw = ImageDraw.Draw(img)
+    unit = promo_w if not config.is_tablet else promo_w * 0.8
+    y = int(promo_h * 0.035)
+    tf = fit_font(draw, title, 'caption', int(unit * 0.088), promo_w * 0.9)
+    sh = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sh).text((promo_w // 2 + 4, y + 6), title, font=tf, fill=(0, 0, 0, 110), anchor='ma')
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(4)))
+    draw = ImageDraw.Draw(img)
+    draw.text((promo_w // 2, y), title, font=tf, fill=WHITE, anchor='ma')
+    y += int(tf.size * 1.32)
+    sf = fit_font(draw, subtitle, 'caption', int(unit * 0.056), promo_w * 0.9)
+    draw.text((promo_w // 2, y), subtitle, font=sf, fill=(255, 213, 79), anchor='ma')
+    y += int(sf.size * 1.45) + int(promo_h * 0.012)
 
-    # Device body
-    draw.rounded_rectangle(
-        (px, py, px + phone_w + bezel * 2, py + phone_h + bezel * 2),
-        radius=corner_r + bezel, fill=(20, 20, 25), outline=(60, 60, 65), width=2
-    )
+    # 端末（下端まで収まる最大サイズ）
+    sw, sh_ = config.screen_w, config.screen_h
+    bottom_margin = int(promo_h * 0.03)
+    avail_h = promo_h - y - bottom_margin
+    bezel_ratio = 0.03 if config.is_tablet else 0.032
+    phone_w = min(int(promo_w * (0.84 if config.is_tablet else 0.8)), int(avail_h / (sh_ / sw + 2 * bezel_ratio)))
+    phone_h = int(phone_w * sh_ / sw)
+    bezel = int(phone_w * bezel_ratio)
+    corner = int(phone_w * (0.035 if config.is_tablet else 0.13))
+    ow, oh = phone_w + 2 * bezel, phone_h + 2 * bezel
+    px = (promo_w - ow) // 2
+    py = promo_h - bottom_margin - oh
 
-    # Screen mask
-    screen_mask = Image.new('L', (phone_w, phone_h), 0)
-    sm = ImageDraw.Draw(screen_mask)
-    sm.rounded_rectangle((0, 0, phone_w - 1, phone_h - 1), radius=corner_r, fill=255)
+    shadow = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((px + 10, py + 24, px + ow + 10, py + oh + 24),
+                                             radius=corner + bezel, fill=(0, 0, 0, 120))
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(36)))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((px, py, px + ow, py + oh), radius=corner + bezel, fill=(24, 24, 28),
+                           outline=(92, 96, 108), width=max(3, bezel // 7))
 
-    # Composite screen
-    screen_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
-    screen_layer.paste(phone_scaled, (px + bezel, py + bezel), screen_mask)
-    img = Image.alpha_composite(img, screen_layer)
+    screen = screen_img.resize((phone_w, phone_h), Image.LANCZOS)
+    mask = Image.new('L', (phone_w, phone_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, phone_w - 1, phone_h - 1), radius=corner, fill=255)
+    img.paste(screen, (px + bezel, py + bezel), mask)
+    return img.convert('RGB')
 
-    return img
+
+def save_promo(sc, title, subtitle, config, output_path):
+    promo = create_promo_frame(sc.finish(), title, subtitle, config)
+    assert promo.size == (config.promo_w, config.promo_h)
+    promo.save(output_path, 'PNG', optimize=True)
+    print(f"Generated: {output_path} ({promo.size[0]}x{promo.size[1]})")
 
 
-# ── Promo 1: Setup Screen ──
+# ──────────────────────────────────────────────
+# 各画面
+# ──────────────────────────────────────────────
 
 def generate_promo_setup(output_path, config=IPHONE):
-    """Setup screen with type selection and player inputs."""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
+    """初期画面（新しいタイトルロゴ・麻雀タイプのアイコン）。"""
+    sc = Screen(config)
+    x, w = PAD, sc.wdp - 2 * PAD
+    y = sc.top + PAD
+    # 使い方ボタン + タイトルロゴ
+    sc.rect(sc.wdp - PAD - 40, y, 40, 40, 8, fill=WHITE_A(0.25))
+    sc.text(sc.wdp - PAD - 20, y + 14, '?', 18, WHITE, True, 'mm')
+    sc.text(sc.wdp - PAD - 20, y + 31, '使い方', 9, WHITE, True, 'mm')
+    logo_w = min(340, max(200, sc.wdp - 32 - 2 * 46))
+    sc.icon('logo', (sc.wdp - logo_w) / 2, y, logo_w)
+    y += logo_w * 108 / 320 + 24
 
-    ps.draw_status_bar()
+    # 新規ゲーム
+    inner = w - 40
+    in_w = inner * 0.48
+    type_h = 16 * 2 + 30 + 8 + 17 + 4
+    h = 20 + (22 + 8 + 2 + 16) + (17 + 8) + type_h + 20 + (17 + 8) + 20 + 2 * (15 + 4 + 43) + 12 + 20 + 4 + 47 + 20
+    sc.card(x, y, w, h, shadow=True)
+    cy = section_title(sc, x + 20, y + 20, inner, '新規ゲーム', size=18, mb=16)
+    sc.text(x + 20, cy + 8.5, '麻雀タイプ', 14, SECTION_TITLE_COLOR, True, 'lm')
+    cy += 17 + 8
+    tw = (inner - 12) / 2
+    for i, (label, icon, active) in enumerate((('4人麻雀', 'tile', True), ('3人麻雀', 'fan', False))):
+        tx = x + 20 + i * (tw + 12)
+        sc.rect(tx, cy, tw, type_h, 8, fill=C_BLUE_BOTTOM if active else WHITE,
+                outline=C_BLUE_BOTTOM if active else CARD_BORDER, width=2)
+        sc.icon(icon, tx + tw / 2 - 15, cy + 18, 30)
+        sc.text(tx + tw / 2, cy + 18 + 30 + 8 + 8.5, label, 14, WHITE if active else GRAY_TEXT, True, 'mm')
+    cy += type_h + 20
+    sc.text(x + 20, cy + 8.5, 'プレイヤー設定', 14, SECTION_TITLE_COLOR, True, 'lm')
+    cy += 17 + 8
+    sc.text(x + 20, cy + 7, '※ 6文字以内で入力してください', 11, HINT_TEXT, False, 'lm')
+    cy += 14 + 6
+    for i, name in enumerate(PLAYERS):
+        ix = x + 20 + (i % 2) * (in_w + 12)
+        iy = cy + (i // 2) * (15 + 4 + 43 + 12)
+        sc.text(ix, iy + 7.5, f"プレイヤー{i + 1}", 12, MED_TEXT, True, 'lm')
+        sc.rect(ix, iy + 19, in_w, 43, 6, fill=WHITE, outline=INPUT_BORDER, width=2)
+        sc.text(ix + 12, iy + 19 + 21.5, name, 16, DARK_TEXT, False, 'lm')
+    cy += 2 * (15 + 4 + 43) + 12 + 20 + 4
+    sc.rect(x + 20, cy, inner, 47, 6, fill=C_BLUE_BOTTOM)
+    sc.text(sc.wdp / 2, cy + 23.5, 'ゲーム開始', 16, WHITE, True, 'mm')
+    y += h + 16
 
-    # Header
-    header_y = ps.y + s(8)
-    title_f = font(s(36), jp=True)
-    draw_centered_text(d, "麻雀", ps.w // 2, header_y, title_f, WHITE)
-    # Actually the title in SetupScreen is "🀄 麻雀" but emoji won't render in PIL
-    # So use text only
-    sub_f = font(s(16), jp=True)
-    draw_centered_text(d, "スコアシートモバイル", ps.w // 2, header_y + s(44), sub_f, WHITE)
-
-    # Help button (top right)
-    hx = ps.w - pad - s(40)
-    hy = header_y
-    rrect(d, (hx, hy, hx + s(40), hy + s(36)), s(8), fill=(255, 255, 255, 64))
-    hf = font(s(18), bold=True)
-    draw_centered_text(d, "?", hx + s(20), hy + s(2), hf, WHITE)
-    hlf = font(s(9), jp=True)
-    draw_centered_text(d, "使い方", hx + s(20), hy + s(22), hlf, WHITE)
-
-    card_y = header_y + s(76)
-    card_x = pad
-    card_w = ps.w - 2 * pad
-
-    # ── Main Card: ゲーム設定 ──
-    card_h = s(380)
-    ps.draw_card(card_x, card_y, card_w, card_h)
-    d = ps.draw  # refresh after card shadow composite
-    inner_pad = s(20)
-    cx = card_x + inner_pad
-    cw = card_w - 2 * inner_pad
-
-    # Section title
-    cy = card_y + inner_pad
-    next_y = ps.draw_section_title(cx, cy, cw, "新規ゲーム")
-    d = ps.draw
-
-    # 麻雀タイプ label
-    lf = font(s(14), jp=True)
-    d.text((cx, next_y), "麻雀タイプ", fill=SECTION_TITLE_COLOR, font=lf)
-    next_y += s(24)
-
-    # Type buttons (two side by side)
-    btn_w = (cw - s(12)) // 2
-    btn_h = s(56)
-
-    # 4人麻雀 (active)
-    rrect(d, (cx, next_y, cx + btn_w, next_y + btn_h), s(8),
-           fill=BG_MED, outline=BG_MED, width=2)
-    icon_f = font(s(20), jp=True)
-    draw_centered_text(d, "4人麻雀", cx + btn_w // 2, next_y + s(20), font(s(14), jp=True), WHITE)
-
-    # 3人麻雀 (inactive)
-    bx2 = cx + btn_w + s(12)
-    rrect(d, (bx2, next_y, bx2 + btn_w, next_y + btn_h), s(8),
-           fill=WHITE, outline=CARD_BORDER, width=2)
-    draw_centered_text(d, "3人麻雀", bx2 + btn_w // 2, next_y + s(20), font(s(14), jp=True), GRAY_TEXT)
-
-    next_y += btn_h + s(16)
-
-    # プレイヤー設定
-    d.text((cx, next_y), "プレイヤー設定", fill=SECTION_TITLE_COLOR, font=lf)
-    next_y += s(22)
-    hint_f = font(s(11), jp=True)
-    d.text((cx, next_y), "※ 4文字以内で入力してください", fill=HINT_TEXT, font=hint_f)
-    next_y += s(18)
-
-    # Player input fields (2x2 grid)
-    inp_w = (cw - s(12)) // 2
-    inp_h = s(44)
-    inp_label_f = font(s(12), jp=True)
-    inp_text_f = font(s(16), jp=True)
-    player_names = ["太郎", "花子", "次郎", "美咲"]
-
-    for i, name in enumerate(player_names):
-        col = i % 2
-        row = i // 2
-        ix = cx + col * (inp_w + s(12))
-        iy = next_y + row * (inp_h + s(24))
-
-        d.text((ix, iy), f"プレイヤー{i+1}", fill=MED_TEXT, font=inp_label_f)
-        iy += s(18)
-        rrect(d, (ix, iy, ix + inp_w, iy + inp_h), s(6),
-               fill=WHITE, outline=INPUT_BORDER, width=2)
-        d.text((ix + s(10), iy + s(10)), name, fill=DARK_TEXT, font=inp_text_f)
-
-    next_y += 2 * (inp_h + s(24)) + s(4)
-
-    # ゲーム開始 button
-    btn_y = next_y
-    ps.draw_button(cx, btn_y, cw, s(48), "ゲーム開始", BG_MED)
-
-    # ── Second Card: 過去のゲーム履歴管理 ──
-    card2_y = card_y + card_h + s(16)
-    card2_h = s(226)
-    ps.draw_card(card_x, card2_y, card_w, card2_h)
-    d = ps.draw
-    cy2 = card2_y + inner_pad
-    ps.draw_section_title(cx, cy2, cw, "過去のゲーム履歴管理")
-    by = cy2 + s(36)
-    ps.draw_button(cx, by, cw, s(48), "過去のゲームを見る", GRAY_TEXT)
-    by += s(56)
-    ps.draw_button(cx, by, cw, s(48), "ゲームを取り込む", TEAL)
-    by += s(56)
-    ps.draw_button(cx, by, cw, s(48), "保存データをクリア", RED)
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "麻雀対戦スコア管理", "３麻４麻両対応！", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
+    # 過去のゲーム履歴管理
+    h2 = 20 + 48 + 47 + 8 + 47 + 20
+    sc.card(x, y, w, h2)
+    cy = section_title(sc, x + 20, y + 20, inner, '過去のゲーム履歴管理', size=18, mb=16)
+    for label, fill in (('過去のゲームを見る', GRAY_TEXT), ('ゲームを取り込む', TEAL)):
+        sc.rect(x + 20, cy, inner, 47, 6, fill=fill)
+        sc.text(sc.wdp / 2, cy + 23.5, label, 16, WHITE, True, 'mm')
+        cy += 47 + 8
+    save_promo(sc, '3人・4人麻雀に対応', '名前を入れてすぐにスタート', config, output_path)
 
 
-# ── Promo 2: Score Input Screen ──
+def draw_game_screen(sc, scroll, hanchan, n_rounds, n_chips, score_values, chip_values, live_host=False):
+    """進行中のゲーム画面全体を、scroll（dp）だけスクロールした状態で描く。"""
+    rows, totals, chip_totals, rank_counts = build_records(n_rounds, n_chips)
+    y = sc.top + PAD - scroll
+    y = game_header(sc, y, hanchan) + 16
+    if live_host:
+        y = live_banner(sc, y, 'リアルタイム共有中',
+                        [f"有効期限: {LIVE_EXPIRES}", '入力は自動で共有されます。タップでコードを表示'],
+                        'broadcast') + 16
+    else:
+        y = live_start_button(sc, y) + 16
+    y = input_card(sc, y, 'ポイント入力', 'tile', score_values, 'スコアを記録', GREEN) + 16
+    chip_top = y
+    y = input_card(sc, y, 'チップ移動', 'celebrate', chip_values, 'チップを記録', YELLOW, fill=C_CHIP_CARD) + 16
+    summary_top = y
+    y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
+    history_table(sc, y, rows, editable=True)
+    return chip_top, summary_top, (totals, rank_counts)
 
-def _draw_game_header(ps, hanchan_label="第1半荘"):
-    """Draw the common game screen header with suspend/finish buttons."""
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
-    hy = ps.y + s(4)
-    hf = font(s(24), jp=True)
-    d.text((pad, hy), hanchan_label, fill=WHITE, font=hf)
 
-    # Suspend button
-    bx = ps.w - pad - s(86) - s(8) - s(50)
-    rrect(d, (bx, hy, bx + s(50), hy + s(32)), s(6),
-           fill=(255, 255, 255, 50), outline=(255, 255, 255, 100), width=1)
-    bf = font(s(13), jp=True)
-    draw_centered_text(d, "中断", bx + s(25), hy + s(6), bf, WHITE)
-
-    # Finish button
-    fx = ps.w - pad - s(86)
-    rrect(d, (fx, hy, fx + s(86), hy + s(32)), s(6), fill=RED)
-    draw_centered_text(d, "ゲーム終了", fx + s(43), hy + s(6), bf, WHITE)
-
-    return hy
+def game_offsets(config):
+    """チップ移動カード・総合スコアの位置（スクロール量の計算用）。"""
+    probe = Screen(config)
+    chip_top, summary_top, _ = draw_game_screen(probe, 0, 4, 3, 1, [0] * 4, [0] * 4)
+    return chip_top - probe.top, summary_top - probe.top
 
 
 def generate_promo_score(output_path, config=IPHONE):
-    """Game screen with score drum roll input (score only, no chip)."""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
+    """スコア入力（ポイント入力）。"""
+    sc = Screen(config)
+    draw_game_screen(sc, 0, 3, 2, 1, [32, -15, -8, -9], [0, 0, 0, 0])
+    save_promo(sc, 'ポイントをかんたん入力', 'ボタンで増減・合計±0で記録', config, output_path)
 
-    ps.draw_status_bar()
-    hy = _draw_game_header(ps)
-
-    card_y = hy + s(48)
-    card_x = pad
-    card_w = ps.w - 2 * pad
-    inner_pad = s(16)
-    cx = card_x + inner_pad
-    cw = card_w - 2 * inner_pad
-
-    # ── ポイント入力 Card ──
-    card_h = s(390)
-    ps.draw_card(card_x, card_y, card_w, card_h)
-    d = ps.draw
-    cy = card_y + inner_pad
-    cy = ps.draw_section_title(cx, cy, cw, "ポイント入力", "合計: 0")
-    d = ps.draw
-
-    # DrumRoll inputs (2x2 grid)
-    players_scores = [("太郎", 32), ("花子", -15), ("次郎", -8), ("美咲", -9)]
-    dr_gap = s(8)
-    dr_w = (cw - dr_gap) // 2
-    dr_row_h = s(120)
-    for i, (name, val) in enumerate(players_scores):
-        col = i % 2
-        row = i // 2
-        dx = cx + col * (dr_w + dr_gap)
-        dy = cy + row * dr_row_h
-        ps.draw_drumroll_input(dx, dy, name, val, box_w=dr_w)
-
-    # スコアを記録 button
-    btn_y = cy + 2 * dr_row_h + s(8)
-    ps.draw_button(cx, btn_y, cw, s(42), "スコアを記録", GREEN)
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "ポイント入力", "直感的なUIでかんたん入力", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
-
-
-# ── Promo 3: Chip Input Screen ──
 
 def generate_promo_chip(output_path, config=IPHONE):
-    """Game screen with chip drum roll input (chip only)."""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
+    """チップ移動と総合スコア（チップ移動カードまでスクロール）。"""
+    chip_top, _ = game_offsets(config)
+    sc = Screen(config)
+    draw_game_screen(sc, chip_top - PAD, 4, 3, 1, [0] * 4, [3, -1, 2, -4])
+    save_promo(sc, 'チップの移動も記録', '総合スコアに自動で反映', config, output_path)
 
-    ps.draw_status_bar()
-    hy = _draw_game_header(ps)
-
-    card_y = hy + s(48)
-    card_x = pad
-    card_w = ps.w - 2 * pad
-    inner_pad = s(16)
-    cx = card_x + inner_pad
-    cw = card_w - 2 * inner_pad
-
-    # ── チップ移動 Card (2x2 grid, all 4 players) ──
-    chip_h = s(390)
-    ps.draw_card(card_x, card_y, card_w, chip_h)
-    d = ps.draw
-    cy = card_y + inner_pad
-    cy = ps.draw_section_title(cx, cy, cw, "チップ移動", "合計: 0")
-    d = ps.draw
-
-    # DrumRoll inputs (2x2 grid)
-    dr_gap = s(8)
-    dr_w = (cw - dr_gap) // 2
-    dr_row_h = s(120)
-    chip_scores = [("太郎", 3), ("花子", -1), ("次郎", 2), ("美咲", -4)]
-    for i, (name, val) in enumerate(chip_scores):
-        col = i % 2
-        row = i // 2
-        dx = cx + col * (dr_w + dr_gap)
-        dy = cy + row * dr_row_h
-        ps.draw_drumroll_input(dx, dy, name, val, box_w=dr_w)
-
-    # チップを記録 button
-    btn_y = cy + 2 * dr_row_h + s(8)
-    ps.draw_button(cx, btn_y, cw, s(42), "チップを記録", GREEN)
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "チップ移動", "チップ枚数もまとめて管理", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
-
-
-# ── Promo 3: Summary + History Screen ──
 
 def generate_promo_summary(output_path, config=IPHONE):
-    """Summary cards and history table."""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
-
-    ps.draw_status_bar()
-    hy = _draw_game_header(ps, "第3半荘")
-
-    card_y = hy + s(48)
-    card_x = pad
-    card_w = ps.w - 2 * pad
-    inner_pad = s(16)
-    cx = card_x + inner_pad
-    cw = card_w - 2 * inner_pad
-
-    # ── 総合スコア Card ──
-    card_h = s(240)
-    ps.draw_card(card_x, card_y, card_w, card_h)
-    d = ps.draw
-    cy = card_y + inner_pad
-    cy = ps.draw_section_title(cx, cy, cw, "総合スコア")
-    d = ps.draw
-
-    # Summary cards (2x2)
-    summary = [
-        ("太郎", "+87", 1, GOLD),
-        ("花子", "+23", 2, SILVER),
-        ("次郎", "-42", 3, BRONZE),
-        ("美咲", "-68", 4, RANK_GRAY),
-    ]
-    sc_w = (cw - s(8)) // 2
-    sc_h = s(80)
-    for i, (name, score, rank, accent) in enumerate(summary):
-        col = i % 2
-        row = i // 2
-        sx = cx + col * (sc_w + s(8))
-        sy = cy + row * (sc_h + s(8))
-
-        # Card bg
-        rrect(d, (sx, sy, sx + sc_w, sy + sc_h), s(8),
-               fill=(248, 249, 250), outline=CARD_BORDER, width=2)
-        # Left accent
-        d.rectangle((sx + 1, sy + s(6), sx + s(4), sy + sc_h - s(6)), fill=accent)
-
-        # Player name
-        nf = font(s(14), jp=True)
-        d.text((sx + s(12), sy + s(6)), name, fill=DARK_TEXT, font=nf)
-
-        # Score
-        sf = font(s(20), bold=True)
-        scolor = GREEN if score.startswith("+") else RED
-        tw, _ = text_size(d, score, sf)
-        d.text((sx + (sc_w - tw) // 2, sy + s(28)), score, fill=scolor, font=sf)
-
-        # Rank badge
-        rank_text = f"{rank}位"
-        rf = font(s(10), jp=True)
-        rtw, _ = text_size(d, rank_text, rf)
-        rbx = sx + s(12)
-        rby = sy + sc_h - s(22)
-        rrect(d, (rbx, rby, rbx + rtw + s(10), rby + s(16)), s(8), fill=accent)
-        d.text((rbx + s(5), rby + s(1)), rank_text, fill=WHITE, font=rf)
-
-    # ── 記録履歴 Card ──
-    hist_y = card_y + card_h + s(16)
-    hist_h = s(280)
-    ps.draw_card(card_x, hist_y, card_w, hist_h)
-    d = ps.draw
-    hy2 = hist_y + inner_pad
-    hy2 = ps.draw_section_title(cx, hy2, cw, "記録履歴")
-    d = ps.draw
-    hint_f = font(s(11), jp=True)
-    d.text((cx, hy2), "※ 長押しで記録を削除", fill=HINT_TEXT, font=hint_f)
-    hy2 += s(18)
-
-    # History rows
-    hist_data = [
-        ("第1半荘", [("太郎", "+12", 1), ("花子", "-8", 3), ("次郎", "+20", 1), ("美咲", "-24", 4)]),
-        ("第2半荘", [("太郎", "+43", 1), ("花子", "-30", 4), ("次郎", "-20", 3), ("美咲", "+7", 2)]),
-    ]
-    row_h = s(80)
-    name_f = font(s(11), jp=True)
-    val_f = font(s(13), bold=True)
-    label_f = font(s(13), jp=True)
-    rank_f = font(s(10), jp=True)
-    time_f = font(s(11), jp=True)
-
-    rank_colors = {1: GOLD, 2: SILVER, 3: BRONZE, 4: RANK_GRAY}
-
-    for ri, (label, scores) in enumerate(hist_data):
-        ry = hy2 + ri * (row_h + s(8))
-        # Row background
-        rrect(d, (cx, ry, cx + cw, ry + row_h), s(8),
-               fill=(248, 249, 250), outline=CARD_BORDER, width=1)
-
-        # Label + time
-        d.text((cx + s(8), ry + s(4)), label, fill=DARK_TEXT, font=label_f)
-        d.text((cx + cw - s(60), ry + s(6)), "14:3" + str(ri), fill=GRAY_TEXT, font=time_f)
-
-        # Score cells (4 columns, centered within each cell)
-        cell_w = cw // 4
-        for ci, (pname, pval, prank) in enumerate(scores):
-            cell_cx = cx + ci * cell_w + cell_w // 2  # center of cell
-            cell_y = ry + s(24)
-            # Player name centered
-            ntw, _ = text_size(d, pname, name_f)
-            d.text((cell_cx - ntw // 2, cell_y), pname, fill=MED_TEXT, font=name_f)
-            # Rank badge centered
-            rc = rank_colors.get(prank, RANK_GRAY)
-            rtext = f"{prank}位"
-            rtw2, _ = text_size(d, rtext, rank_f)
-            badge_w = rtw2 + s(8)
-            rrect(d, (cell_cx - badge_w // 2, cell_y + s(16),
-                       cell_cx + badge_w // 2, cell_y + s(30)), s(6), fill=rc)
-            d.text((cell_cx - rtw2 // 2, cell_y + s(17)), rtext, fill=WHITE, font=rank_f)
-            # Value centered
-            vc = GREEN if pval.startswith("+") else RED
-            vtw, _ = text_size(d, pval, val_f)
-            d.text((cell_cx - vtw // 2, cell_y + s(34)), pval, fill=vc, font=val_f)
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "総合スコア & 履歴", "ランキングと全記録を一目で確認", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
-
-
-# ── Promo 4: Past Games Screen ──
-
-def generate_promo_past_games(output_path, config=IPHONE):
-    """Past games list screen."""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
-
-    ps.draw_status_bar()
-
-    # Header: ← 戻る | 過去のゲーム | (spacer)
-    hy = ps.y + s(4)
-    # Back button
-    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(255, 255, 255, 50))
-    bf = font(s(14), jp=True)
-    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, WHITE)
-    # Title
-    tf = font(s(20), jp=True)
-    draw_centered_text(d, "過去のゲーム", ps.w // 2, hy + s(2), tf, WHITE)
-
-    card_x = pad
-    card_w = ps.w - 2 * pad
-    inner_pad = s(16)
-
-    # Game cards
-    games = [
-        ("2026/02/25", "4人麻雀", "太郎 / 花子 / 次郎 / 美咲", "5半荘"),
-        ("2026/02/20", "3人麻雀", "太郎 / 花子 / 次郎", "3半荘"),
-        ("2026/02/15", "4人麻雀", "Aさん / Bさん / Cさん / Dさん", "4半荘"),
-        ("2026/02/10", "4人麻雀", "太郎 / 花子 / 次郎 / 美咲", "6半荘"),
-        ("2026/02/05", "3人麻雀", "太郎 / 花子 / 次郎", "2半荘"),
-    ]
-
-    card_h = s(88)
-    gy = hy + s(48)
-
-    for date, gtype, players, hanchan in games:
-        ps.draw_card(card_x, gy, card_w, card_h)
-        d = ps.draw
-        cx = card_x + inner_pad
-        cw = card_w - 2 * inner_pad
-
-        # Header row: date + type
-        df = font(s(16), jp=True)
-        d.text((cx, gy + s(10)), date, fill=SECTION_TITLE_COLOR, font=df)
-        gtf = font(s(13), jp=True)
-        tw, _ = text_size(d, gtype, gtf)
-        d.text((cx + cw - tw, gy + s(12)), gtype, fill=GRAY_TEXT, font=gtf)
-        # Divider
-        div_y = gy + s(38)
-        d.line([(cx, div_y), (cx + cw, div_y)], fill=(238, 238, 238), width=1)
-
-        # Body: players + hanchan
-        pf = font(s(14), jp=True)
-        d.text((cx, div_y + s(8)), players, fill=DARK_TEXT, font=pf)
-        hf2 = font(s(13), jp=True)
-        tw2, _ = text_size(d, hanchan, hf2)
-        d.text((cx + cw - tw2, div_y + s(10)), hanchan, fill=GRAY_TEXT, font=hf2)
-
-        gy += card_h + s(12)
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "過去のゲーム一覧", "いつでも振り返り・削除が可能", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
-
-
-# ── Promo 5: Share / Read-Only Screen ──
-
-LIVE_YELLOW_TOP = (249, 168, 37)    # #f9a825  閲覧モードの背景（上）
-LIVE_YELLOW_BOTTOM = (253, 216, 53)  # #fdd835  閲覧モードの背景（下）
-LIVE_DARK_TEXT = (62, 39, 35)        # #3e2723  閲覧モードの文字色
-LIVE_BORDER = (245, 127, 23)         # #f57f17
-
-
-def draw_summary_card(ps, card_y):
-    """総合スコアカード（4人）を描画し、カード下端の y を返す。"""
-    s = ps._s
-    pad = ps.pad
-    card_x = pad
-    card_w = ps.w - 2 * pad
-    inner_pad = s(16)
-    cx = card_x + inner_pad
-    cw = card_w - 2 * inner_pad
-
-    card_h = s(240)
-    ps.draw_card(card_x, card_y, card_w, card_h)
-    cy = card_y + inner_pad
-    cy = ps.draw_section_title(cx, cy, cw, "総合スコア")
-    d = ps.draw
-
-    summary = [
-        ("太郎", "+87", 1, GOLD),
-        ("花子", "+23", 2, SILVER),
-        ("次郎", "-42", 3, BRONZE),
-        ("美咲", "-68", 4, RANK_GRAY),
-    ]
-    sc_w = (cw - s(8)) // 2
-    sc_h = s(80)
-    for i, (name, score, rank, accent) in enumerate(summary):
-        col = i % 2
-        row = i // 2
-        sx = cx + col * (sc_w + s(8))
-        sy = cy + row * (sc_h + s(8))
-        rrect(d, (sx, sy, sx + sc_w, sy + sc_h), s(8),
-               fill=(248, 249, 250), outline=CARD_BORDER, width=2)
-        d.rectangle((sx + 1, sy + s(6), sx + s(4), sy + sc_h - s(6)), fill=accent)
-        nf = font(s(14), jp=True)
-        d.text((sx + s(12), sy + s(6)), name, fill=DARK_TEXT, font=nf)
-        sf = font(s(20), bold=True)
-        scolor = GREEN if score.startswith("+") else RED
-        tw, _ = text_size(d, score, sf)
-        d.text((sx + (sc_w - tw) // 2, sy + s(28)), score, fill=scolor, font=sf)
-        rank_text = f"{rank}位"
-        rf = font(s(10), jp=True)
-        rtw, _ = text_size(d, rank_text, rf)
-        rbx = sx + s(12)
-        rby = sy + sc_h - s(22)
-        rrect(d, (rbx, rby, rbx + rtw + s(10), rby + s(16)), s(8), fill=accent)
-        d.text((rbx + s(5), rby + s(1)), rank_text, fill=WHITE, font=rf)
-    return card_y + card_h
-
-
-def draw_modal_overlay(ps, modal_h):
-    """半透明の背景と白いモーダルを描画し、モーダルの (x, y, w) を返す。"""
-    s = ps._s
-    overlay = Image.new('RGBA', ps.img.size, (0, 0, 0, 0))
-    od = ImageDraw.Draw(overlay)
-    od.rectangle((0, 0, ps.w, ps.h), fill=(0, 0, 0, 128))
-    ps.img = Image.alpha_composite(ps.img, overlay)
-
-    modal_w = ps.w - 2 * s(24)
-    mx = s(24)
-    my = (ps.h - modal_h) // 2
-    mshadow = Image.new('RGBA', ps.img.size, (0, 0, 0, 0))
-    msd = ImageDraw.Draw(mshadow)
-    msd.rounded_rectangle((mx + 4, my + 4, mx + modal_w + 4, my + modal_h + 4),
-                           radius=s(16), fill=(0, 0, 0, 60))
-    mshadow = mshadow.filter(ImageFilter.GaussianBlur(12))
-    ps.img = Image.alpha_composite(ps.img, mshadow)
-    ps.draw = ImageDraw.Draw(ps.img)
-    rrect(ps.draw, (mx, my, mx + modal_w, my + modal_h), s(16), fill=WHITE)
-    return mx, my, modal_w
-
-
-def draw_session_code_modal(ps, title, desc_lines, code, buttons):
-    """6桁のセッションコードを表示するモーダル（アプリの共有モーダルと同じ構成）。"""
-    s = ps._s
-    line_h = s(20)
-    modal_h = s(24) + s(32) + len(desc_lines) * line_h + s(16) + s(52) + s(28) + len(buttons) * s(52) + s(16)
-    mx, my, modal_w = draw_modal_overlay(ps, modal_h)
-    d = ps.draw
-
-    y = my + s(24)
-    draw_centered_text(d, title, ps.w // 2, y, font(s(20), jp=True), SECTION_TITLE_COLOR)
-    y += s(32)
-    mdf = font(s(13), jp=True)
-    for line in desc_lines:
-        draw_centered_text(d, line, ps.w // 2, y, mdf, LIGHT_TEXT)
-        y += line_h
-    y += s(16)
-    # 6桁のコード（等幅・字間広め）
-    cf = font(s(36), bold=True)
-    spaced = " ".join(code)
-    draw_centered_text(d, spaced, ps.w // 2, y, cf, SECTION_TITLE_COLOR)
-    y += s(52)
-    draw_centered_text(d, "有効期限: 2026/2/26 21:30:00", ps.w // 2, y, font(s(12), jp=True), LIGHT_TEXT)
-    y += s(28)
-
-    bx = mx + s(24)
-    bw = modal_w - 2 * s(24)
-    bh = s(44)
-    bbf = font(s(16), jp=True)
-    for label, bg, fg in buttons:
-        rrect(d, (bx, y, bx + bw, y + bh), s(8), fill=bg)
-        draw_centered_text(d, label, bx + bw // 2, y + s(12), bbf, fg)
-        y += bh + s(8)
-
-
-def generate_promo_share(output_path, config=IPHONE):
-    """終了済みゲームの閲覧画面 + 6桁のセッションコード共有モーダル。"""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
-
-    ps.draw_status_bar()
-
-    # Header: ← 戻る | 2026/02/25 | 共有
-    hy = ps.y + s(4)
-    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(255, 255, 255, 50))
-    bf = font(s(14), jp=True)
-    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, WHITE)
-    tf = font(s(24), jp=True)
-    draw_centered_text(d, "2026/02/25", ps.w // 2, hy + s(0), tf, WHITE)
-    share_x = ps.w - pad - s(50)
-    rrect(d, (share_x, hy, share_x + s(50), hy + s(32)), s(6), fill=BG_MED)
-    draw_centered_text(d, "共有", share_x + s(25), hy + s(6), bf, WHITE)
-
-    draw_summary_card(ps, hy + s(48))
-
-    draw_session_code_modal(
-        ps,
-        "ゲームを共有",
-        ["このコードを入力すると、対局を閲覧して", "履歴に保存できます。"],
-        "381604",
-        [("送信する", BG_MED, WHITE), ("コードをコピー", GREEN, WHITE), ("閉じる", (240, 240, 240), LIGHT_TEXT)],
-    )
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "ゲームの共有", "6桁のコードでかんたん共有", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
+    """総合スコアと記録履歴 + ゲーム終了の確認（メダル）。"""
+    _, summary_top = game_offsets(config)
+    sc = Screen(config)
+    _, _, (totals, rank_counts) = draw_game_screen(sc, summary_top - PAD, 4, 3, 1, [0] * 4, [0] * 4)
+    finish_modal(sc, totals, rank_counts)
+    save_promo(sc, '順位とスコアをひと目で', 'ゲーム終了で結果を確定', config, output_path)
 
 
 def generate_promo_live_host(output_path, config=IPHONE):
-    """ホストのゲーム画面（リアルタイム共有中）+ セッションコードのモーダル。"""
-    ps = PhoneScreen(config)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
-
-    ps.draw_status_bar()
-
-    # Header: 第3半荘 | 中断 | ゲーム終了
-    hy = ps.y + s(4)
-    d.text((pad, hy), "第3半荘", fill=WHITE, font=font(s(24), jp=True))
-    bf = font(s(13), jp=True)
-    fx = ps.w - pad - s(86)
-    rrect(d, (fx, hy, fx + s(86), hy + s(32)), s(6), fill=RED)
-    draw_centered_text(d, "ゲーム終了", fx + s(43), hy + s(8), bf, WHITE)
-    sx = fx - s(8) - s(50)
-    rrect(d, (sx, hy, sx + s(50), hy + s(32)), s(6), fill=(255, 255, 255, 50))
-    draw_centered_text(d, "中断", sx + s(25), hy + s(8), bf, WHITE)
-
-    # 共有中バナー（通常配色）
-    by = hy + s(48)
-    bw = ps.w - 2 * pad
-    rrect(d, (pad, by, pad + bw, by + s(60)), s(12), fill=(72, 104, 160), outline=(150, 172, 210), width=2)
-    d.text((pad + s(12), by + s(10)), "リアルタイム共有中  コード: 482915", fill=WHITE, font=font(s(15), jp=True))
-    d.text((pad + s(12), by + s(34)), "入力は自動で共有されます。タップでコードを表示",
-           fill=(235, 235, 235), font=font(s(12), jp=True))
-
-    draw_summary_card(ps, by + s(76))
-
-    draw_session_code_modal(
-        ps,
-        "リアルタイム共有",
-        ["参加者はセットアップ画面の「ゲームを取り込む」に", "このコードを入力すると、スコアを", "リアルタイムで閲覧できます。"],
-        "482915",
-        [("コードをコピー", GREEN, WHITE), ("閉じる", (240, 240, 240), LIGHT_TEXT)],
-    )
-
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "リアルタイム共有", "同じ卓のみんなでスコアを確認", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
+    """リアルタイム共有（ホスト）: 共有中バナー + 6桁の数字コードのモーダル。"""
+    sc = Screen(config)
+    draw_game_screen(sc, 0, 3, 2, 1, [0] * 4, [0] * 4, live_host=True)
+    code_modal(sc, 'リアルタイム共有', '「ゲームを取り込む」にこのコードを入力すると閲覧できます',
+               LIVE_CODE, LIVE_EXPIRES,
+               [('コードをコピー', GREEN, WHITE), ('閉じる', (240, 240, 240), LIGHT_TEXT)])
+    save_promo(sc, 'リアルタイム共有', '6桁の数字コード・最長48時間', config, output_path)
 
 
 def generate_promo_live_viewer(output_path, config=IPHONE):
-    """ゲストの閲覧モード画面（黄色基調）。"""
-    ps = PhoneScreen(config)
-    draw_gradient_bg(ps.img, LIVE_YELLOW_TOP, LIVE_YELLOW_BOTTOM)
-    ps.draw = ImageDraw.Draw(ps.img)
-    d = ps.draw
-    s = ps._s
-    pad = ps.pad
+    """閲覧モード（ゲスト・黄色基調）。"""
+    sc = Screen(config, live=True)
+    rows, totals, chip_totals, rank_counts = build_records(2, 1)
+    y = sc.top + PAD
+    # ヘッダー: ← 戻る | 日付 | 閲覧モード
+    y = back_header(sc, y, GAME_DATE, ('閲覧モード', RED, WHITE), fg=C_LIVE_TEXT,
+                    back_fill=rgba(C_LIVE_TEXT, 0.12)) + 16
+    y = live_banner(sc, y, '閲覧中', ['ホストの入力が自動で反映されます（編集不可）', f"有効期限: {LIVE_EXPIRES}"],
+                    'broadcast_dark', live_mode=True) + 16
+    y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
+    history_table(sc, y, rows, editable=False)
+    save_promo(sc, '閲覧モード', 'ホストの記録が自動で反映', config, output_path)
 
-    ps.draw_status_bar()
 
-    # Header: ← 戻る | 2026/02/25 | 閲覧モード
-    hy = ps.y + s(4)
-    bf = font(s(14), jp=True)
-    rrect(d, (pad, hy, pad + s(60), hy + s(32)), s(6), fill=(226, 160, 40))
-    draw_centered_text(d, "← 戻る", pad + s(30), hy + s(6), bf, LIVE_DARK_TEXT)
-    draw_centered_text(d, "2026/02/25", ps.w // 2 - s(10), hy + s(2), font(s(20), jp=True), LIVE_DARK_TEXT)
-    badge_w = s(84)
-    bx = ps.w - pad - badge_w
-    rrect(d, (bx, hy + s(2), bx + badge_w, hy + s(30)), s(14), fill=RED)
-    draw_centered_text(d, "閲覧モード", bx + badge_w // 2, hy + s(8), font(s(13), jp=True), WHITE)
+def generate_promo_share(output_path, config=IPHONE):
+    """終了済みゲームの共有（6桁の数字コード）。"""
+    sc = Screen(config)
+    rows, totals, chip_totals, rank_counts = build_records(3, 1)
+    y = sc.top + PAD
+    y = back_header(sc, y, GAME_DATE, ('共有', C_BLUE_BOTTOM, WHITE)) + 16
+    y = live_banner(sc, y, f"共有中  コード: {SHARE_CODE}", [f"有効期限: {SHARE_EXPIRES}", 'タップでコードを表示'],
+                    'send') + 16
+    y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
+    history_table(sc, y, rows, editable=False)
+    code_modal(sc, 'ゲームを共有', '「ゲームを取り込む」にこのコードを入力すると閲覧・保存できます',
+               SHARE_CODE, SHARE_EXPIRES,
+               [('送信する', C_BLUE_BOTTOM, WHITE), ('コードをコピー', GREEN, WHITE),
+                ('閉じる', (240, 240, 240), LIGHT_TEXT)])
+    save_promo(sc, '終わった対局も共有', '6桁の数字コード・48時間有効', config, output_path)
 
-    # 閲覧中バナー（コードは表示しない）
-    by = hy + s(48)
-    bw = ps.w - 2 * pad
-    rrect(d, (pad, by, pad + bw, by + s(60)), s(12), fill=(254, 240, 196), outline=LIVE_BORDER, width=3)
-    d.text((pad + s(12), by + s(10)), "閲覧中", fill=LIVE_DARK_TEXT, font=font(s(15), jp=True))
-    d.text((pad + s(12), by + s(34)), "ホストの入力が自動で反映されます（編集不可）",
-           fill=LIVE_DARK_TEXT, font=font(s(12), jp=True))
 
-    end_y = draw_summary_card(ps, by + s(76))
+PAST_GAMES = [
+    # (日付, 人数, プレイヤー, 半荘数, お気に入り, 取り込み, 閲覧中)
+    ('2026/11/24', 4, ['健太', '翔', '大輔', '拓海'], 2, None, False, True),
+    ('2026/11/22', 4, PLAYERS, 3, True, False, False),
+    ('2026/11/20', 3, ['太郎', '花子', '次郎'], 6, True, False, False),
+    ('2026/11/15', 4, ['Aさん', 'Bさん', 'Cさん', 'Dさん'], 5, False, True, False),
+    ('2026/11/08', 3, ['太郎', '美咲', '次郎'], 4, False, False, False),
+    ('2026/11/01', 4, PLAYERS, 6, True, False, False),
+    ('2026/10/25', 3, ['花子', '次郎', '美咲'], 3, False, False, False),
+    ('2026/10/18', 4, ['太郎', '花子', '健太', '翔'], 5, False, False, False),
+    ('2026/10/11', 4, PLAYERS, 4, False, False, False),
+]
 
-    # 記録履歴カード（簡易）
-    hist_y = end_y + s(16)
-    card_w = ps.w - 2 * pad
-    hist_h = s(190)
-    ps.draw_card(pad, hist_y, card_w, hist_h)
-    d = ps.draw
-    cx = pad + s(16)
-    cw = card_w - s(32)
-    ty = ps.draw_section_title(cx, hist_y + s(16), cw, "記録履歴")
-    d = ps.draw
-    names = ["半荘", "太郎", "花子", "次郎", "美咲"]
-    rows = [["第1", "+32", "-15", "-8", "-9"], ["第2", "+41", "+12", "-20", "-33"], ["第3", "+14", "+26", "-14", "-26"]]
-    col_w = cw // len(names)
-    hf = font(s(12), jp=True)
-    for i, n in enumerate(names):
-        draw_centered_text(d, n, cx + col_w * i + col_w // 2, ty, hf, MED_TEXT)
-    ry = ty + s(26)
-    vf = font(s(13), bold=True)
-    for r in rows:
-        d.line((cx, ry - s(6), cx + cw, ry - s(6)), fill=SCORE_BOX_BORDER, width=2)
-        for i, v in enumerate(r):
-            color = MED_TEXT if i == 0 else (GREEN if v.startswith("+") else RED)
-            f = hf if i == 0 else vf
-            draw_centered_text(d, v, cx + col_w * i + col_w // 2, ry, f, color)
-        ry += s(30)
 
-    phone_img = ps.get_image()
-    promo = create_promo_frame(phone_img, "閲覧モード", "ホストの入力が自動で反映", config)
-    promo.save(output_path, 'PNG')
-    print(f"Generated: {output_path}")
+def generate_promo_past_games(output_path, config=IPHONE):
+    """過去のゲーム一覧（お気に入り・金の五筒アイコン・閲覧中の対局）。"""
+    sc = Screen(config)
+    x, w = PAD, sc.wdp - 2 * PAD
+    y = sc.top + 12
+    y = back_header(sc, y, '過去のゲーム', title_size=20) + 12
+    note = ('星マークをタップでお気に入り（最大20件）。保存はお気に入りを含めて100件までで、'
+            '超えるとお気に入り以外の古いものから自動で削除されます。')
+    y = sc.paragraph(x, y, note, 12, WHITE_A(0.85), w, 18) + 12
+    card_h = 16 + 22 + 8 + 1 + 10 + 20 + 16
+    for date, count, names, hanchan, fav, imported, joined in PAST_GAMES:
+        if joined:
+            sc.card(x, y, w, card_h, fill=C_LIVE_CARD, outline=YELLOW_LIVE, width=2)
+        else:
+            sc.card(x, y, w, card_h)
+        ix, iw = x + 16, w - 32
+        hy = y + 16 + 11
+        sc.text(ix, hy, date, 16, SECTION_TITLE_COLOR, True, 'lm')
+        bx = ix + sc.text_w(date, 16) + 8
+        if joined:
+            bw = sc.text_w('● 閲覧モード', 11) + 12
+            sc.rect(bx, hy - 9, bw, 18, 4, fill=YELLOW_LIVE)
+            sc.text(bx + bw / 2, hy, '● 閲覧モード', 11, C_LIVE_TEXT, True, 'mm')
+        if imported:
+            bw = sc.text_w('共有', 11) + 12
+            sc.rect(bx, hy - 9, bw, 18, 4, fill=(232, 244, 253), outline=(144, 202, 249), width=1)
+            sc.text(bx + bw / 2, hy, '共有', 11, (21, 101, 192), True, 'mm')
+        # 右側: 麻雀タイプ + お気に入り
+        rx = ix + iw
+        if fav is not None:
+            sc.icon('star_on' if fav else 'star_off', rx - 2 - 22, hy - 11, 22)
+            rx -= 2 + 22 + 2 + 8
+        label = '3人麻雀' if count == 3 else '4人麻雀'
+        lw = sc.text_w(label, 13, False)
+        sc.text(rx, hy, label, 13, GRAY_TEXT, False, 'rm')
+        sc.icon('fan' if count == 3 else 'tile', rx - lw - 3 - 16, hy - 8, 16)
+        sc.rect(ix, y + 16 + 22 + 8, iw, 1, fill=(238, 238, 238))
+        by = y + 16 + 22 + 8 + 1 + 10 + 10
+        sc.text(ix, by, ' / '.join(names), 14, DARK_TEXT, False, 'lm')
+        sc.text(ix + iw, by, f"{hanchan}半荘", 13, GRAY_TEXT, True, 'rm')
+        y += card_h + 12
+        if y > sc.hdp:
+            break
+    save_promo(sc, '過去の対局を保存', 'お気に入り登録・最大100件まで保存', config, output_path)
+
+
+YELLOW_LIVE = (249, 168, 37)  # #f9a825
 
 
 # ══════════════════════════════════════════════
@@ -1238,21 +1329,33 @@ def generate_all_promos(output_dir, config):
     generate_promo_live_viewer(os.path.join(output_dir, 'promo_8_live_viewer.png'), config)
 
 
-if __name__ == '__main__':
-    assets_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
+def prepare_promo_resources():
+    PROMO_FONTS.update(ensure_promo_fonts())
+    render_app_icons()
 
-    # App assets
-    generate_icon(os.path.join(assets_dir, 'icon.png'))
-    generate_adaptive_icon(os.path.join(assets_dir, 'adaptive-icon.png'))
-    generate_splash(os.path.join(assets_dir, 'splash.png'))
-    generate_favicon(os.path.join(assets_dir, 'favicon.png'))
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--promos-only', action='store_true',
+                        help='App Store 掲載画像（assets/iphone, assets/ipad）だけを生成する')
+    args = parser.parse_args()
+
+    assets_dir = os.path.join(ROOT_DIR, 'assets')
+
+    if not args.promos_only:
+        # App assets
+        generate_icon(os.path.join(assets_dir, 'icon.png'))
+        generate_adaptive_icon(os.path.join(assets_dir, 'adaptive-icon.png'))
+        generate_splash(os.path.join(assets_dir, 'splash.png'))
+        generate_favicon(os.path.join(assets_dir, 'favicon.png'))
+
+    prepare_promo_resources()
 
     # iPhone promotional screenshots (1242x2688)
-    iphone_dir = os.path.join(assets_dir, 'iphone')
-    generate_all_promos(iphone_dir, IPHONE)
+    generate_all_promos(os.path.join(assets_dir, 'iphone'), IPHONE)
 
     # iPad promotional screenshots (2048x2732)
-    ipad_dir = os.path.join(assets_dir, 'ipad')
-    generate_all_promos(ipad_dir, IPAD)
+    generate_all_promos(os.path.join(assets_dir, 'ipad'), IPAD)
 
     print("\nAll assets generated successfully!")
