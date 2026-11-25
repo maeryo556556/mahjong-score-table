@@ -10,7 +10,7 @@ import {
   MAX_FAVORITE_GAMES,
 } from './utils';
 import type { ShareGameData, ShareGameDataV2 } from './utils';
-import type { JoinedSession, LiveSessionStatus } from './liveSession';
+import type { ImportedGameRef, JoinedSession, LiveSessionStatus } from './liveSession';
 
 let _db: SQLite.SQLiteDatabase | null = null;
 
@@ -109,6 +109,13 @@ export const initDatabase = () => {
   // お気に入り（Issue #60）
   try {
     getDb().runSync('ALTER TABLE games ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // カラムが既に存在する場合は無視
+  }
+  // 取り込み元のセッションコード（Issue #72: 取り込み済みコードの再取り込みを判定する）
+  // live_session_code は受信元セッションが進行中の間だけ記録するため、終了済みでも残る別カラムを持つ
+  try {
+    getDb().runSync('ALTER TABLE games ADD COLUMN source_session_code TEXT');
   } catch {
     // カラムが既に存在する場合は無視
   }
@@ -435,9 +442,11 @@ export const buildShareData = (gameId: number): ShareGameDataV2 => {
 
 // 共有データ（セッションから受信したもの）を終了済み・取り込み済みゲームとして保存
 // liveSession を渡すと、受信元のセッションを記録する（有効な間は過去のゲームからライブ閲覧へ遷移できる）
+// sourceSessionCode は取り込み元のセッションコード（終了済みでも記録し、再取り込みの判定に使う: Issue #72）
 export const importShareData = (
   data: ShareGameData,
-  liveSession: { code: string; expiresAt: number } | null = null
+  liveSession: { code: string; expiresAt: number } | null = null,
+  sourceSessionCode: string | null = liveSession?.code ?? null
 ): number => {
   if (!validateShareData(data)) {
     throw new Error('共有データの形式が正しくありません');
@@ -449,8 +458,8 @@ export const importShareData = (
 
   getDb().withTransactionSync(() => {
     const result = getDb().runSync(
-      'INSERT INTO games (player_count, start_date, created_at, finished, imported, live_session_code, live_session_expires_at) VALUES (?, ?, ?, 1, 1, ?, ?)',
-      [data.pc, data.d, now, liveSession?.code ?? null, liveSession?.expiresAt ?? null]
+      'INSERT INTO games (player_count, start_date, created_at, finished, imported, live_session_code, live_session_expires_at, source_session_code) VALUES (?, ?, ?, 1, 1, ?, ?, ?)',
+      [data.pc, data.d, now, liveSession?.code ?? null, liveSession?.expiresAt ?? null, sourceSessionCode]
     );
     gameId = result.lastInsertRowId;
 
@@ -593,6 +602,29 @@ export const getSavedLiveSessionCodes = (): Set<string> => {
     'SELECT live_session_code FROM games WHERE imported = 1 AND live_session_code IS NOT NULL'
   );
   return new Set(rows.map(r => r.live_session_code));
+};
+
+// セッションコードから取り込み済み（履歴に保存済み）の対局を探す（Issue #72）
+// 取り込み元コード、または受信元セッションとして記録したコードが一致する最新の対局を返す
+export const findImportedGameBySessionCode = (code: string): ImportedGameRef | null => {
+  const row = getDb().getFirstSync<{
+    id: number;
+    live_session_code: string | null;
+    live_session_expires_at: number | null;
+  }>(
+    `SELECT id, live_session_code, live_session_expires_at FROM games
+      WHERE imported = 1 AND (source_session_code = ? OR live_session_code = ?)
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [code, code]
+  );
+  if (!row) return null;
+  return {
+    gameId: row.id,
+    liveSession:
+      row.live_session_code && row.live_session_expires_at
+        ? { code: row.live_session_code, expiresAt: row.live_session_expires_at }
+        : null,
+  };
 };
 
 // ゲームデータクリア

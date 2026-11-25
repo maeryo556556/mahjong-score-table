@@ -53,6 +53,13 @@ export default function Index() {
     setScreen(liveReturnScreen);
   };
 
+  // 「ゲームを取り込む」で取り込み済みのコードが入力された場合、保存済みの対局を開く（Issue #72）
+  const handleOpenImportedGame = (gameId: number) => {
+    setLiveSessionCode(null);
+    setCurrentGameId(gameId);
+    setScreen('viewPastGame');
+  };
+
   const handleSavedLiveGame = (gameId: number) => {
     setLiveSessionCode(null);
     setCurrentGameId(gameId);
@@ -135,6 +142,7 @@ export default function Index() {
           onResumeGame={handleResumeGame}
           onViewPastGames={handleViewPastGames}
           onJoinLiveSession={handleJoinLiveSession}
+          onOpenImportedGame={handleOpenImportedGame}
         />
       )}
     </View>

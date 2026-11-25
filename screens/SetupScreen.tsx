@@ -10,11 +10,11 @@ import {
   Modal,
   Keyboard,
   TouchableWithoutFeedback,
-  Dimensions,
   FlatList,
   Image,
   useWindowDimensions,
 } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -26,20 +26,40 @@ import {
   getLastPlayerNames,
   getJoinedSessions,
   getSavedLiveSessionCodes,
+  findImportedGameBySessionCode,
 } from '../database';
 import { buildDefaultPlayerNames, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import { TileFanIcon, TileIcon } from '../components/icons/HandDrawnIcons';
 import { TitleLogo } from '../components/icons/TitleLogo';
-import { extractSessionCode, sanitizeSessionCodeInput, selectRejoinableSessions, SESSION_CODE_LENGTH } from '../liveSession';
+import {
+  extractSessionCode,
+  resolveImportCode,
+  sanitizeSessionCodeInput,
+  selectRejoinableSessions,
+  SESSION_CODE_LENGTH,
+} from '../liveSession';
+import type { ImportedGameRef } from '../liveSession';
+
+// 使い方のモーダル（Issue #72）
+const GUIDE_PADDING = 18;
+const GUIDE_IMAGE_ASPECT = 3 / 4; // assets/guide/ の画像（高さ / 幅）
 
 interface SetupScreenProps {
   onStartGame: (gameId: number) => void;
   onResumeGame: (gameId: number) => void;
   onViewPastGames: () => void;
   onJoinLiveSession: (code: string) => void;
+  /** 取り込み済みの対局（履歴に保存済み）を開く（Issue #72） */
+  onOpenImportedGame: (gameId: number) => void;
 }
 
-export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames, onJoinLiveSession }: SetupScreenProps) {
+export default function SetupScreen({
+  onStartGame,
+  onResumeGame,
+  onViewPastGames,
+  onJoinLiveSession,
+  onOpenImportedGame,
+}: SetupScreenProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [hasPastGames, setHasPastGames] = useState(false);
@@ -48,19 +68,23 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
   const [importCode, setImportCode] = useState('');
   const [showGuide, setShowGuide] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // 右上の「使い方」ボタンと重ならないよう、左右にボタン幅ぶんの余白を残して中央に置く
   const logoWidth = Math.min(340, Math.max(200, windowWidth - 32 - 2 * 46));
   const guideListRef = useRef<FlatList>(null);
+  // 使い方のモーダル（Issue #72）: 小さめの正方形に近い比率。1ページの幅＝モーダルの幅でスワイプでめくる
+  const guideWidth = Math.min(windowWidth - 48, 360, Math.max(280, windowHeight * 0.6));
+  // 画像は少し内側に収めて、モーダル全体を正方形に近づける
+  const guideImageWidth = Math.round((guideWidth - 2 * GUIDE_PADDING) * 0.9);
   const importCodeInputRef = useRef<TextInput>(null);
 
   // 使い方ガイド（Issue #58: リアルタイム共有・閲覧モード・6桁のセッションコードに合わせて更新）
   // Issue #62: 各ステップを要点だけの短い文に整理
-  // 各スライドの画像は generate_assets.py で生成した画面イメージ（assets/iphone/）
+  // 各スライドの画像は generate_assets.py で生成した画面イメージ（assets/guide/、4:3。Issue #72）
   const guideSlides = [
     {
       title: 'ゲームの始め方',
-      image: require('../assets/iphone/promo_1_setup.png'),
+      image: require('../assets/guide/guide_1_setup.png'),
       steps: [
         '3人／4人麻雀を選ぶ',
         `名前を入力（${MAX_PLAYER_NAME_LENGTH}文字以内）`,
@@ -69,7 +93,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'スコアの記録',
-      image: require('../assets/iphone/promo_2_score.png'),
+      image: require('../assets/guide/guide_2_score.png'),
       steps: [
         'ドラムロールでポイントを入力',
         '合計±0にして「スコアを記録」',
@@ -78,7 +102,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'チップの記録',
-      image: require('../assets/iphone/promo_3_chip.png'),
+      image: require('../assets/guide/guide_3_chip.png'),
       steps: [
         'チップの移動を入力',
         '合計±0にして「チップを記録」',
@@ -86,7 +110,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'ゲームの中断・終了',
-      image: require('../assets/iphone/promo_4_summary.png'),
+      image: require('../assets/guide/guide_4_finish.png'),
       steps: [
         '「中断」で一時保存（あとで再開）',
         '「ゲーム終了」で結果を確定',
@@ -95,7 +119,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: 'リアルタイム共有',
-      image: require('../assets/iphone/promo_7_live_share.png'),
+      image: require('../assets/guide/guide_5_live_share.png'),
       steps: [
         '「リアルタイム共有を開始」をタップ',
         '6桁のコードをメンバーに伝える',
@@ -104,7 +128,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: '閲覧モード（参加する側）',
-      image: require('../assets/iphone/promo_8_live_viewer.png'),
+      image: require('../assets/guide/guide_6_live_viewer.png'),
       steps: [
         '「ゲームを取り込む」に6桁のコードを入力',
         'ホストの記録が自動で表示（編集不可）',
@@ -113,7 +137,7 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     },
     {
       title: '過去のゲームと共有',
-      image: require('../assets/iphone/promo_6_share.png'),
+      image: require('../assets/guide/guide_7_share.png'),
       steps: [
         '「過去のゲームを見る」で対局を確認',
         '「共有」で6桁のコードを発行（48時間有効）',
@@ -126,10 +150,23 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
     <Image
       key={i}
       source={slide.image}
-      style={g.mockupImage}
-      resizeMode="contain"
+      style={[g.mockupImage, { width: guideImageWidth, height: guideImageWidth * GUIDE_IMAGE_ASPECT }]}
+      resizeMode="cover"
     />
   ));
+
+  // ページ移動（ボタン・インジケーターのタップ）
+  const goToGuidePage = (index: number) => {
+    const next = Math.max(0, Math.min(guideSlides.length - 1, index));
+    setGuideIndex(next);
+    guideListRef.current?.scrollToIndex({ index: next, animated: true });
+  };
+
+  // スワイプでページが変わったらインジケーターを合わせる（半分以上めくった時点で切り替える）
+  const handleGuideScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const page = Math.max(0, Math.min(guideSlides.length - 1, Math.round(e.nativeEvent.contentOffset.x / guideWidth)));
+    if (page !== guideIndex) setGuideIndex(page);
+  };
 
   useEffect(() => {
     const finished = getFinishedGames();
@@ -221,9 +258,41 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
       Alert.alert('エラー', 'コードが正しくありません。\n6桁の数字のセッションコードを入力してください');
       return;
     }
-    setShowImportModal(false);
-    setImportCode('');
-    onJoinLiveSession(sessionCode);
+    // すでに取り込み済みのコードはエラーにせず、取り込み済みの対局を開く（Issue #72）
+    let imported: ImportedGameRef | null = null;
+    try {
+      imported = findImportedGameBySessionCode(sessionCode);
+    } catch {
+      // 判定できなくても通常どおり参加する
+    }
+    const action = resolveImportCode(sessionCode, imported, Date.now());
+    if (action.type === 'join') {
+      setShowImportModal(false);
+      setImportCode('');
+      onJoinLiveSession(action.code);
+      return;
+    }
+    Alert.alert(
+      '取り込み済み',
+      action.type === 'openLive'
+        ? 'この対局はすでに取り込み済みです。\n閲覧モードで開きます'
+        : 'この対局はすでに取り込み済みです。\n保存済みの対局を開きます',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '開く',
+          onPress: () => {
+            setShowImportModal(false);
+            setImportCode('');
+            if (action.type === 'openLive') {
+              onJoinLiveSession(action.code);
+            } else {
+              onOpenImportedGame(action.gameId);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -405,19 +474,33 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
           </TouchableWithoutFeedback>
         </Modal>
 
-        <Modal visible={showGuide} transparent animationType="fade">
+        <Modal visible={showGuide} transparent animationType="fade" onRequestClose={() => setShowGuide(false)}>
           <View style={styles.modalOverlay}>
-            <View style={styles.guideModalContent}>
+            <View style={[styles.guideModalContent, { width: guideWidth }]}>
+              <TouchableOpacity
+                style={styles.guideCloseButton}
+                onPress={() => setShowGuide(false)}
+                accessibilityRole="button"
+                accessibilityLabel="使い方を閉じる"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.guideCloseText}>×</Text>
+              </TouchableOpacity>
+              {/* 左右のスワイプでページをめくる（Issue #72） */}
               <FlatList
                 ref={guideListRef}
                 data={guideSlides}
                 horizontal
                 pagingEnabled
+                bounces={false}
                 showsHorizontalScrollIndicator={false}
-                scrollEnabled={false}
                 keyExtractor={(_, i) => String(i)}
+                getItemLayout={(_, index) => ({ length: guideWidth, offset: guideWidth * index, index })}
+                onScroll={handleGuideScroll}
+                scrollEventThrottle={16}
+                onMomentumScrollEnd={handleGuideScroll}
                 renderItem={({ item, index }) => (
-                  <View style={styles.guideSlide}>
+                  <View style={[styles.guideSlide, { width: guideWidth }]}>
                     <Text style={styles.guideTitle}>{item.title}</Text>
                     {guideMockups[index]}
                     <View style={styles.guideSteps}>
@@ -433,44 +516,49 @@ export default function SetupScreen({ onStartGame, onResumeGame, onViewPastGames
                   </View>
                 )}
               />
-              <View style={styles.guideDots}>
-                {guideSlides.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[styles.guideDot, i === guideIndex && styles.guideDotActive]}
-                  />
-                ))}
-              </View>
+              {/* 前へ ／ ページ位置のインジケーター ／ 次へ */}
               <View style={styles.guideNav}>
-                {guideIndex > 0 ? (
-                  <TouchableOpacity
-                    style={styles.guideNavButton}
-                    onPress={() => {
-                      const next = guideIndex - 1;
-                      setGuideIndex(next);
-                      guideListRef.current?.scrollToIndex({ index: next, animated: true });
-                    }}
-                  >
-                    <Text style={styles.guideNavText}>← 前へ</Text>
-                  </TouchableOpacity>
-                ) : <View style={styles.guideNavButton} />}
+                <TouchableOpacity
+                  style={styles.guideNavButton}
+                  onPress={() => goToGuidePage(guideIndex - 1)}
+                  disabled={guideIndex === 0}
+                  accessibilityRole="button"
+                  accessibilityLabel="前のページ"
+                >
+                  <Text style={[styles.guideNavText, guideIndex === 0 && styles.guideNavTextDisabled]}>←</Text>
+                </TouchableOpacity>
+                <View style={styles.guideIndicator}>
+                  <View style={styles.guideDots}>
+                    {guideSlides.map((_, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        onPress={() => goToGuidePage(i)}
+                        hitSlop={{ top: 8, bottom: 8, left: 3, right: 3 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${i + 1}ページ目`}
+                      >
+                        <View style={[styles.guideDot, i === guideIndex && styles.guideDotActive]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.guidePageText}>{guideIndex + 1} / {guideSlides.length}</Text>
+                </View>
                 {guideIndex < guideSlides.length - 1 ? (
                   <TouchableOpacity
                     style={[styles.guideNavButton, styles.guideNavNext]}
-                    onPress={() => {
-                      const next = guideIndex + 1;
-                      setGuideIndex(next);
-                      guideListRef.current?.scrollToIndex({ index: next, animated: true });
-                    }}
+                    onPress={() => goToGuidePage(guideIndex + 1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="次のページ"
                   >
-                    <Text style={[styles.guideNavText, styles.guideNavNextText]}>次へ →</Text>
+                    <Text style={[styles.guideNavText, styles.guideNavNextText]}>→</Text>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.guideNavButton, styles.guideNavClose]}
+                    style={[styles.guideNavButton, styles.guideNavNext]}
                     onPress={() => setShowGuide(false)}
+                    accessibilityRole="button"
                   >
-                    <Text style={[styles.guideNavText, styles.guideNavNextText]}>閉じる</Text>
+                    <Text style={[styles.guideNavText, styles.guideNavNextText, styles.guideNavCloseText]}>閉じる</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -760,100 +848,127 @@ const styles = StyleSheet.create({
   guideModalContent: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 24,
-    width: '100%',
+    paddingTop: 16,
+    paddingBottom: 14,
     overflow: 'hidden',
   },
-  guideSlide: {
-    width: Dimensions.get('window').width - 96,
+  guideCloseButton: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    zIndex: 1,
+  },
+  guideCloseText: {
+    fontSize: 18,
+    lineHeight: 20,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  guideSlide: {
+    alignItems: 'center',
+    paddingHorizontal: GUIDE_PADDING,
   },
   guideTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#1e3c72',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   guideSteps: {
     width: '100%',
-    gap: 10,
+    gap: 6,
   },
   guideStepRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   guideStepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#2a5298',
     justifyContent: 'center',
     alignItems: 'center',
   },
   guideStepBadgeText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   guideStepText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     color: '#333',
-    lineHeight: 20,
-  },
-  guideDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 20,
-    marginBottom: 16,
-  },
-  guideDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ddd',
-  },
-  guideDotActive: {
-    backgroundColor: '#2a5298',
-    width: 20,
+    lineHeight: 18,
   },
   guideNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: GUIDE_PADDING,
   },
   guideNavButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
     borderRadius: 8,
-    minWidth: 90,
+    minWidth: 64,
     alignItems: 'center',
   },
   guideNavNext: {
     backgroundColor: '#2a5298',
   },
-  guideNavClose: {
-    backgroundColor: '#2a5298',
-  },
   guideNavText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2a5298',
   },
+  guideNavTextDisabled: {
+    color: '#ccc',
+  },
   guideNavNextText: {
     color: '#fff',
+  },
+  guideNavCloseText: {
+    fontSize: 14,
+  },
+  guideIndicator: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  guideDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  guideDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#ddd',
+  },
+  guideDotActive: {
+    backgroundColor: '#2a5298',
+    width: 18,
+  },
+  guidePageText: {
+    fontSize: 11,
+    color: '#999',
   },
 });
 
 // ガイド内モックアップ用スタイル
 const g = StyleSheet.create({
   mockupImage: {
-    width: '85%',
-    height: undefined,
-    aspectRatio: 1242 / 2688,
-    borderRadius: 12,
-    marginBottom: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    marginBottom: 10,
   },
 });

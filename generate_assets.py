@@ -5,7 +5,8 @@ Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
   - iphone/promo_1_setup.png ... promo_8_live_viewer.png (8 iPhone App Store images, 1242x2688)
   - ipad/promo_1_setup.png ... promo_8_live_viewer.png (8 iPad App Store images, 2048x2732)
-  ※ 使い方ガイド（SetupScreen）の画像も iphone/ のものを使う
+  - guide/guide_1_setup.png ... guide_7_share.png (使い方ガイドの画像, 4:3, Issue #72)
+    掲載画像と同じ画面モックアップから、各ページで説明する部分を切り出したもの
 
 App Store 掲載画像はデザイン画像（モックアップ）で作る（Issue #70）。
   - 手書き風アイコンとタイトルロゴは scripts/render_sketch_icons.js がアプリのコンポーネント
@@ -15,7 +16,8 @@ App Store 掲載画像はデザイン画像（モックアップ）で作る（I
 
 Usage:
   python3 generate_assets.py               # すべて生成
-  python3 generate_assets.py --promos-only # 掲載画像だけ生成
+  python3 generate_assets.py --promos-only # 掲載画像と使い方ガイドの画像だけ生成
+  python3 generate_assets.py --guide-only  # 使い方ガイドの画像だけ生成
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -954,6 +956,7 @@ def code_modal(sc, title, desc, code, expires, buttons):
     desc_lines = sc.wrap(desc, 13, inner, False)
     h = 24 + 25 + 12 + len(desc_lines) * 20 + 16 + 44 + 8 + 15 + 16 + len(buttons) * (48 + 8) - 8 + 24
     my = (sc.hdp - h) / 2
+    sc.anchors = {**getattr(sc, 'anchors', {}), 'modal_top': my, 'modal_h': h}
     sc.shadow(mx, my, mw, h, 16, dy=4, blur=8, alpha=0.3)
     sc.rect(mx, my, mw, h, 16, fill=WHITE)
     y = my + 24
@@ -985,6 +988,7 @@ def finish_modal(sc, totals, rank_counts):
     foot_h = 20 + 41 + 20 + 1
     h = head_h + body_h + foot_h
     my = (sc.hdp - h) / 2
+    sc.anchors = {**getattr(sc, 'anchors', {}), 'modal_top': my, 'modal_h': h}
     sc.shadow(mx, my, mw, h, 12, dy=4, blur=8, alpha=0.3)
     sc.rect(mx, my, mw, h, 12, fill=WHITE)
     sc.icon('flag', sc.wdp / 2 - 20, my + 20, 40)
@@ -1100,9 +1104,8 @@ def save_promo(sc, title, subtitle, config, output_path):
 # 各画面
 # ──────────────────────────────────────────────
 
-def generate_promo_setup(output_path, config=IPHONE):
-    """初期画面（新しいタイトルロゴ・麻雀タイプのアイコン）。"""
-    sc = Screen(config)
+def draw_setup_screen(sc):
+    """初期画面を描く。「新規ゲーム」カードの上端の y を返す。"""
     x, w = PAD, sc.wdp - 2 * PAD
     y = sc.top + PAD
     # 使い方ボタン + タイトルロゴ
@@ -1112,6 +1115,7 @@ def generate_promo_setup(output_path, config=IPHONE):
     logo_w = min(340, max(200, sc.wdp - 32 - 2 * 46))
     sc.icon('logo', (sc.wdp - logo_w) / 2, y, logo_w)
     y += logo_w * 108 / 320 + 24
+    card_top = y
 
     # 新規ゲーム
     inner = w - 40
@@ -1153,6 +1157,13 @@ def generate_promo_setup(output_path, config=IPHONE):
         sc.rect(x + 20, cy, inner, 47, 6, fill=fill)
         sc.text(sc.wdp / 2, cy + 23.5, label, 16, WHITE, True, 'mm')
         cy += 47 + 8
+    return card_top
+
+
+def generate_promo_setup(output_path, config=IPHONE):
+    """初期画面（新しいタイトルロゴ・麻雀タイプのアイコン）。"""
+    sc = Screen(config)
+    draw_setup_screen(sc)
     save_promo(sc, '3人・4人麻雀に対応', '名前を入れてすぐにスタート', config, output_path)
 
 
@@ -1167,6 +1178,7 @@ def draw_game_screen(sc, scroll, hanchan, n_rounds, n_chips, score_values, chip_
                         'broadcast') + 16
     else:
         y = live_start_button(sc, y) + 16
+    sc.anchors = {'score_top': y}
     y = input_card(sc, y, 'ポイント入力', 'tile', score_values, 'スコアを記録', GREEN) + 16
     chip_top = y
     y = input_card(sc, y, 'チップ移動', 'celebrate', chip_values, 'チップを記録', YELLOW, fill=C_CHIP_CARD) + 16
@@ -1312,6 +1324,92 @@ def generate_promo_past_games(output_path, config=IPHONE):
 YELLOW_LIVE = (249, 168, 37)  # #f9a825
 
 
+# ──────────────────────────────────────────────
+# 使い方ガイドの画像（Issue #72）
+# ──────────────────────────────────────────────
+# 使い方のモーダルは正方形に近い比率で表示するため、画面全体ではなく
+# 各ページで説明する部分を 4:3 で切り出す（掲載画像と同じモックアップを使う）。
+
+GUIDE_ASPECT = 3 / 4          # 高さ / 幅
+GUIDE_OUT_W = 960             # 出力する画像の幅（px）
+
+
+def save_guide(sc, top_dp, output_path):
+    """画面の top_dp（dp）から下を 4:3 で切り出して保存する。"""
+    img = sc.finish()
+    crop_h = sc.wdp * GUIDE_ASPECT
+    top = max(0.0, min(top_dp, sc.hdp - crop_h))
+    box = (0, sc.px(top), sc.w, sc.px(top) + int(round(sc.w * GUIDE_ASPECT)))
+    out = img.crop(box).convert('RGB')
+    out = out.resize((GUIDE_OUT_W, int(round(GUIDE_OUT_W * GUIDE_ASPECT))), Image.LANCZOS)
+    out.save(output_path, 'PNG', optimize=True)
+    print(f"Generated: {output_path} ({out.size[0]}x{out.size[1]})")
+
+
+def generate_guide_images(output_dir, config=IPHONE):
+    """使い方ガイド（SetupScreen）の各ページの画像。"""
+    os.makedirs(output_dir, exist_ok=True)
+    path = lambda name: os.path.join(output_dir, name)  # noqa: E731
+
+    # 1. ゲームの始め方: 麻雀タイプとプレイヤー名
+    sc = Screen(config)
+    card_top = draw_setup_screen(sc)
+    save_guide(sc, card_top + 20 + 26 + 12 - 6, path('guide_1_setup.png'))
+
+    # 2. スコアの記録: ポイント入力
+    sc = Screen(config)
+    draw_game_screen(sc, 0, 3, 2, 1, [32, -15, -8, -9], [0, 0, 0, 0])
+    save_guide(sc, sc.anchors['score_top'] - 10, path('guide_2_score.png'))
+
+    # 3. チップの記録: チップ移動（チップ移動カードまでスクロール）
+    chip_top, _ = game_offsets(config)
+    sc = Screen(config)
+    draw_game_screen(sc, chip_top - PAD, 4, 3, 1, [0] * 4, [3, -1, 2, -4])
+    save_guide(sc, sc.top + PAD - 10, path('guide_3_chip.png'))
+
+    # 4. ゲームの中断・終了: ヘッダーのボタン + ゲーム終了の確認
+    sc = Screen(config)
+    _, _, (totals, rank_counts) = draw_game_screen(sc, 0, 4, 3, 1, [0] * 4, [0] * 4)
+    finish_modal(sc, totals, rank_counts)
+    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_4_finish.png'))
+
+    # 5. リアルタイム共有（ホスト）: 6桁のコード
+    sc = Screen(config)
+    draw_game_screen(sc, 0, 3, 2, 1, [0] * 4, [0] * 4, live_host=True)
+    code_modal(sc, 'リアルタイム共有', '「ゲームを取り込む」にこのコードを入力すると閲覧できます',
+               LIVE_CODE, LIVE_EXPIRES,
+               [('コードをコピー', GREEN, WHITE), ('閉じる', (240, 240, 240), LIGHT_TEXT)])
+    a = sc.anchors
+    save_guide(sc, a['modal_top'] + a['modal_h'] / 2 - sc.wdp * GUIDE_ASPECT / 2, path('guide_5_live_share.png'))
+
+    # 6. 閲覧モード（ゲスト・黄色基調）
+    sc = Screen(config, live=True)
+    rows, totals, chip_totals, rank_counts = build_records(2, 1)
+    y = sc.top + PAD
+    y = back_header(sc, y, GAME_DATE, ('閲覧モード', RED, WHITE), fg=C_LIVE_TEXT,
+                    back_fill=rgba(C_LIVE_TEXT, 0.12)) + 16
+    y = live_banner(sc, y, '閲覧中', ['ホストの入力が自動で反映されます（編集不可）', f"有効期限: {LIVE_EXPIRES}"],
+                    'broadcast_dark', live_mode=True) + 16
+    y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
+    history_table(sc, y, rows, editable=False)
+    save_guide(sc, sc.top + PAD - 10, path('guide_6_live_viewer.png'))
+
+    # 7. 過去のゲームと共有: 終了済みゲームの共有コード
+    sc = Screen(config)
+    rows, totals, chip_totals, rank_counts = build_records(3, 1)
+    y = sc.top + PAD
+    y = back_header(sc, y, GAME_DATE, ('共有', C_BLUE_BOTTOM, WHITE)) + 16
+    y = live_banner(sc, y, f"共有中  コード: {SHARE_CODE}", [f"有効期限: {SHARE_EXPIRES}", 'タップでコードを表示'],
+                    'send') + 16
+    y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
+    history_table(sc, y, rows, editable=False)
+    code_modal(sc, 'ゲームを共有', '「ゲームを取り込む」にこのコードを入力すると閲覧・保存できます',
+               SHARE_CODE, SHARE_EXPIRES,
+               [('送信する', C_BLUE_BOTTOM, WHITE), ('コードをコピー', GREEN, WHITE),
+                ('閉じる', (240, 240, 240), LIGHT_TEXT)])
+    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_7_share.png'))
+
+
 # ══════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════
@@ -1338,10 +1436,17 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--promos-only', action='store_true',
-                        help='App Store 掲載画像（assets/iphone, assets/ipad）だけを生成する')
+                        help='App Store 掲載画像（assets/iphone, assets/ipad）と使い方ガイドの画像だけを生成する')
+    parser.add_argument('--guide-only', action='store_true',
+                        help='使い方ガイドの画像（assets/guide）だけを生成する')
     args = parser.parse_args()
 
     assets_dir = os.path.join(ROOT_DIR, 'assets')
+
+    if args.guide_only:
+        prepare_promo_resources()
+        generate_guide_images(os.path.join(assets_dir, 'guide'), IPHONE)
+        raise SystemExit(0)
 
     if not args.promos_only:
         # App assets
@@ -1357,5 +1462,8 @@ if __name__ == '__main__':
 
     # iPad promotional screenshots (2048x2732)
     generate_all_promos(os.path.join(assets_dir, 'ipad'), IPAD)
+
+    # 使い方ガイドの画像（4:3）
+    generate_guide_images(os.path.join(assets_dir, 'guide'), IPHONE)
 
     print("\nAll assets generated successfully!")
