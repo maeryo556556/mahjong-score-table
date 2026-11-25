@@ -583,21 +583,21 @@ export default function GameScreen({
                 <View style={styles.headerButtons}>
                   {/* プレイヤー名の変更（ゲーム途中でも可: Issue #58）。Issue #62 で「中断」の左隣へ移動 */}
                   <TouchableOpacity
-                    style={styles.renameButton}
+                    style={[styles.headerActionButton, styles.renameButton]}
                     onPress={openRenameModal}
                     accessibilityRole="button"
                     accessibilityLabel="名前変更"
                   >
                     <PencilIcon size={13} />
-                    <Text style={styles.renameButtonText}>名前変更</Text>
+                    <Text style={styles.headerActionButtonText}>名前変更</Text>
                   </TouchableOpacity>
                   {onSuspend && (
-                    <TouchableOpacity style={styles.suspendButton} onPress={handleSuspendGame}>
-                      <Text style={styles.suspendButtonText}>中断</Text>
+                    <TouchableOpacity style={[styles.headerActionButton, styles.suspendButton]} onPress={handleSuspendGame}>
+                      <Text style={styles.headerActionButtonText}>中断</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity style={styles.finishButton} onPress={handleFinishGame}>
-                    <Text style={styles.finishButtonText}>ゲーム終了</Text>
+                  <TouchableOpacity style={[styles.headerActionButton, styles.finishButton]} onPress={handleFinishGame}>
+                    <Text style={styles.headerActionButtonText}>ゲーム終了</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -676,7 +676,8 @@ export default function GameScreen({
             >
               <View style={styles.iconTitleRow}>
                 <BroadcastIcon size={18} />
-                <Text style={styles.liveBannerTitle}>リアルタイム共有中  コード: {hostSession.code}</Text>
+                {/* コードはタイトルに出さず、タップで開くモーダルで表示する（Issue #64） */}
+                <Text style={styles.liveBannerTitle}>リアルタイム共有中</Text>
               </View>
               <Text style={styles.liveBannerText}>
                 有効期限: {formatExpiresAt(hostSession.expiresAt)}
@@ -1010,27 +1011,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  suspendButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  // ヘッダー右側の3ボタン（名前変更・中断・ゲーム終了）は高さ・文字位置を揃える（Issue #64）
+  headerActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 34,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
   },
-  suspendButtonText: {
+  headerActionButtonText: {
     color: '#fff',
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: 'bold',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  suspendButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.4)',
   },
   finishButton: {
     backgroundColor: '#dc3545',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  finishButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    borderColor: '#dc3545',
   },
   card: {
     backgroundColor: '#fff',
@@ -1168,20 +1174,9 @@ const styles = StyleSheet.create({
   },
   // ---- プレイヤー名の変更 ----
   renameButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 4,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 6,
-    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.4)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  renameButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   renameInputRow: {
     flexDirection: 'row',
