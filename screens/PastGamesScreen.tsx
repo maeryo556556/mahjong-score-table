@@ -80,8 +80,10 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
     setGames(loadGames());
   }, []);
 
-  // 複数選択モード（Issue #74）: 長押しまたは「選択」ボタンで開始し、チェックしたゲームをまとめて削除する。
-  // ホストとして共有中（進行中）のゲーム・お気に入りのゲーム（Issue #78）・閲覧中の対局は選択できない
+  // 複数選択モード（Issue #74）: 「選択」ボタンで開始し、チェックしたゲームをまとめて削除する。
+  // ゲームカードの長押しでは開始しない（Issue #88: 誤操作防止のため長押しでの開始を廃止）。
+  // ホストとして共有中（進行中）のゲーム・お気に入りのゲーム（Issue #78）・閲覧中の対局は選択できない。
+  // お気に入りのゲームには選択モード中「お気に入りのため削除不可」のワッペンを重ねて表示する（Issue #88）
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const selectableIds = selectableGameIds(games, liveHostIds);
@@ -98,9 +100,9 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
     if (ids.length === 0) setSelectionMode(false);
   }, [selectableKey]);
 
-  const startSelection = (gameId?: number) => {
+  const startSelection = () => {
     setSelectionMode(true);
-    setSelectedIds(gameId === undefined ? [] : [gameId]);
+    setSelectedIds([]);
   };
 
   const exitSelection = () => {
@@ -207,10 +209,11 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* 説明文は簡潔な1行だけにする（Issue #88） */}
           <Text style={styles.limitNote}>
             {selectionMode
-              ? '削除するゲームをタップして選んでください。お気に入りは選択できません。'
-              : `星マークをタップでお気に入り（最大${MAX_FAVORITE_GAMES}件）。長押しで選択して削除できます。保存はお気に入りを含めて${MAX_SAVED_GAMES}件までで、超えるとお気に入り以外の古いものから自動で削除されます。`}
+              ? '削除するゲームをタップして選んでください'
+              : `保存は最大${MAX_SAVED_GAMES}件まで（お気に入りは最大${MAX_FAVORITE_GAMES}件）`}
           </Text>
           {/* ゲストとして参加した対局（コード入力なしで閲覧モードに再入室できる: Issue #58）。選択モード中は隠す */}
           {!selectionMode && joinedSessions.map(session => (
@@ -257,86 +260,97 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
               // 進行中のゲームとお気に入りのゲーム（Issue #78）はここからは削除させない
               const selectable = isGameSelectable(game, liveHostIds);
               const disabled = selectionMode && !selectable;
+              // 選択モード中のお気に入りには「削除不可」のワッペンを重ねる（Issue #88）
+              const showUndeletableBadge = selectionMode && !isHostLive && game.favorite === 1;
               return (
-                <TouchableOpacity
-                  key={game.id}
-                  style={[
-                    styles.gameCard,
-                    live && styles.gameCardLive,
-                    selected && styles.gameCardSelected,
-                    disabled && styles.gameCardDisabled,
-                  ]}
-                  onPress={() => handlePressGame(game)}
-                  onLongPress={selectionMode || !selectable ? undefined : () => startSelection(game.id)}
-                  delayLongPress={600}
-                  disabled={disabled}
-                  accessibilityRole={selectionMode ? 'checkbox' : 'button'}
-                  accessibilityState={selectionMode ? { checked: selected, disabled } : undefined}
-                >
-                  <View style={styles.gameCardHeader}>
-                    <View style={styles.gameDateRow}>
-                      {selectionMode && (
-                        <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
-                          {selected && <Text style={styles.checkboxMark}>✓</Text>}
-                        </View>
-                      )}
-                      <Text style={styles.gameDate}>{game.start_date}</Text>
-                      {live && (
-                        <View style={styles.liveBadge}>
-                          <Text style={styles.liveBadgeText}>{isHostLive ? '● 共有中（進行中）' : '● 共有中'}</Text>
-                        </View>
-                      )}
-                      {game.imported === 1 && (
-                        <View style={styles.importedBadge}>
-                          <Text style={styles.importedBadgeText}>共有</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={styles.gameTypeRow}>
-                      <GameTypeLabel playerCount={game.player_count} />
-                      {/* お気に入り（終了済みゲームのみ: Issue #60） */}
-                      {!isHostLive && selectionMode && game.favorite === 1 && <StarIcon size={22} filled />}
-                      {!isHostLive && !selectionMode && (
-                        <TouchableOpacity
-                          style={styles.favoriteButton}
-                          onPress={() => handleToggleFavorite(game)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          accessibilityRole="button"
-                          accessibilityLabel={game.favorite === 1 ? 'お気に入りを解除' : 'お気に入りに登録'}
-                        >
-                          <StarIcon size={22} filled={game.favorite === 1} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                  <View style={styles.gameCardBody}>
-                    {/* 終了済みゲームは最終スコア付きで表示（Issue #78）。未終了のゲームは名前のみ */}
-                    {game.finalScores ? (
-                      <View style={styles.finalScoreList}>
-                        {game.finalScores.map((fs, i) => (
-                          <Text key={i} style={styles.finalScoreItem}>
-                            <Text style={styles.finalScoreName}>{fs.playerName} </Text>
-                            <Text
-                              style={[
-                                styles.finalScoreValue,
-                                fs.total > 0 ? styles.scorePositive : fs.total < 0 ? styles.scoreNegative : styles.scoreNeutral,
-                              ]}
-                            >
-                              {formatSignedScore(fs.total)}
-                            </Text>
-                          </Text>
-                        ))}
+                // ワッペンはカードの半透明（disabled）の影響を受けないよう、カードの外側に重ねる
+                <View key={game.id} style={styles.gameCardWrapper}>
+                  <TouchableOpacity
+                    style={[
+                      styles.gameCard,
+                      live && styles.gameCardLive,
+                      selected && styles.gameCardSelected,
+                      disabled && styles.gameCardDisabled,
+                    ]}
+                    onPress={() => handlePressGame(game)}
+                    disabled={disabled}
+                    accessibilityRole={selectionMode ? 'checkbox' : 'button'}
+                    accessibilityState={selectionMode ? { checked: selected, disabled } : undefined}
+                  >
+                    <View style={styles.gameCardHeader}>
+                      <View style={styles.gameDateRow}>
+                        {selectionMode && (
+                          <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
+                            {selected && <Text style={styles.checkboxMark}>✓</Text>}
+                          </View>
+                        )}
+                        <Text style={styles.gameDate}>{game.start_date}</Text>
+                        {live && (
+                          <View style={styles.liveBadge}>
+                            <Text style={styles.liveBadgeText}>{isHostLive ? '● 共有中（進行中）' : '● 共有中'}</Text>
+                          </View>
+                        )}
+                        {game.imported === 1 && (
+                          <View style={styles.importedBadge}>
+                            <Text style={styles.importedBadgeText}>共有</Text>
+                          </View>
+                        )}
                       </View>
-                    ) : (
-                      <Text style={styles.playerList}>
-                        {game.playerNames.join(' / ')}
+                      <View style={styles.gameTypeRow}>
+                        <GameTypeLabel playerCount={game.player_count} />
+                        {/* お気に入り（終了済みゲームのみ: Issue #60） */}
+                        {!isHostLive && selectionMode && game.favorite === 1 && <StarIcon size={22} filled />}
+                        {!isHostLive && !selectionMode && (
+                          <TouchableOpacity
+                            style={styles.favoriteButton}
+                            onPress={() => handleToggleFavorite(game)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            accessibilityRole="button"
+                            accessibilityLabel={game.favorite === 1 ? 'お気に入りを解除' : 'お気に入りに登録'}
+                          >
+                            <StarIcon size={22} filled={game.favorite === 1} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.gameCardBody}>
+                      {/* 終了済みゲームは最終スコア付きで表示（Issue #78）。未終了のゲームは名前のみ */}
+                      {game.finalScores ? (
+                        <View style={styles.finalScoreList}>
+                          {game.finalScores.map((fs, i) => (
+                            <Text key={i} style={styles.finalScoreItem}>
+                              <Text style={styles.finalScoreName}>{fs.playerName} </Text>
+                              <Text
+                                style={[
+                                  styles.finalScoreValue,
+                                  fs.total > 0 ? styles.scorePositive : fs.total < 0 ? styles.scoreNegative : styles.scoreNeutral,
+                                ]}
+                              >
+                                {formatSignedScore(fs.total)}
+                              </Text>
+                            </Text>
+                          ))}
+                        </View>
+                      ) : (
+                        <Text style={styles.playerList}>
+                          {game.playerNames.join(' / ')}
+                        </Text>
+                      )}
+                      <Text style={styles.hanchanInfo}>
+                        {game.hanchanCount}半荘
                       </Text>
-                    )}
-                    <Text style={styles.hanchanInfo}>
-                      {game.hanchanCount}半荘
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                  {showUndeletableBadge && (
+                    <View
+                      style={styles.undeletableBadge}
+                      pointerEvents="none"
+                      accessibilityLabel="お気に入りのため削除不可"
+                    >
+                      <Text style={styles.undeletableBadgeText}>お気に入りのため削除不可</Text>
+                    </View>
+                  )}
+                </View>
               );
             })
           )}
@@ -507,6 +521,33 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#6c757d',
+  },
+  gameCardWrapper: {
+    position: 'relative',
+  },
+  // お気に入りのため削除不可のワッペン（Issue #88）: カードの右上に斜めに貼ったような見た目
+  undeletableBadge: {
+    position: 'absolute',
+    top: -6,
+    right: 10,
+    backgroundColor: '#f9a825',
+    borderWidth: 2,
+    borderColor: '#fff',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    transform: [{ rotate: '6deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 6,
+    zIndex: 2,
+  },
+  undeletableBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#3e2723',
   },
   gameCard: {
     backgroundColor: '#fff',
