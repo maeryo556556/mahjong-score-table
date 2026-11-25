@@ -3,6 +3,7 @@
 
 Generates:
   - icon.png, adaptive-icon.png, splash.png, favicon.png (app assets)
+    手書き風の絵柄（components/icons/AppIconArt.tsx）を使う（Issue #74）
   - iphone/promo_1_setup.png ... promo_8_live_viewer.png (8 iPhone App Store images, 1242x2688)
   - ipad/promo_1_setup.png ... promo_8_live_viewer.png (8 iPad App Store images, 2048x2732)
   - guide/guide_1_setup.png ... guide_7_share.png (使い方ガイドの画像, 4:3, Issue #72)
@@ -18,6 +19,7 @@ Usage:
   python3 generate_assets.py               # すべて生成
   python3 generate_assets.py --promos-only # 掲載画像と使い方ガイドの画像だけ生成
   python3 generate_assets.py --guide-only  # 使い方ガイドの画像だけ生成
+  python3 generate_assets.py --icons-only  # アプリのアイコン（icon / adaptive-icon / splash / favicon）だけ生成
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -226,40 +228,65 @@ def draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h, num_rows=8, num_co
     return img
 
 
-def generate_icon(output_path, size=1024):
+# Issue #74: アイコンは従来の構図（スコアシート＋傾けた「中」の牌）のまま、アプリ内の手書き風アイコンと
+# 同じタッチで描き直した。絵柄は components/icons/AppIconArt.tsx を scripts/render_sketch_icons.js で
+# PNG にしたもの（ICONS['appicon*']）を使い、背景のグラデーションだけここで描く。
+# 旧来の draw_score_sheet / draw_mahjong_tile は使わなくなったが、比較用に残している。
+
+APP_ICON_MARGIN = 16  # appicon_wide の周囲の余白（viewBox 単位。AppIconArt の margin）
+
+
+def _art(name, px):
+    return ICONS[name].resize((px, px), Image.LANCZOS)
+
+
+def _icon_background(size):
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     bg = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     draw_gradient_bg(bg, BG_DARK, BG_MED)
+    # 色鉛筆でなぞったような、うっすらした斜めのハッチング
+    hatch = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    hd = ImageDraw.Draw(hatch)
+    step = max(6, size // 40)
+    for k in range(-size, size, step):
+        hd.line([(k, size), (k + size, 0)], fill=(255, 255, 255, 10), width=max(1, size // 300))
+    bg.alpha_composite(hatch)
     mask = Image.new('L', (size, size), 0)
-    md = ImageDraw.Draw(mask)
-    md.rounded_rectangle((0, 0, size - 1, size - 1), radius=int(size * 0.18), fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=int(size * 0.18), fill=255)
     img.paste(bg, (0, 0), mask)
-    margin = int(size * 0.10)
-    sheet_x = margin
-    sheet_y = int(size * 0.17)
-    sheet_w = int(size * 0.80)
-    sheet_h = int(size * 0.72)
-    img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h, score_font_size=int(sheet_h * 0.11))
-    tile_w = int(size * 0.35)
-    tile_h = int(size * 0.43)
-    img = draw_mahjong_tile(img, sheet_x + sheet_w - int(size * 0.06),
-                            sheet_y + sheet_h - int(size * 0.06), tile_w, tile_h, rotation=15)
+    return img, mask
+
+
+def generate_icon(output_path, size=1024):
+    img, mask = _icon_background(size)
+    art = _art('appicon', size)
+    layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    layer.paste(art, (0, 0), mask)  # 牌のはみ出しは角丸で切る
+    img.alpha_composite(layer)
     img.save(output_path, 'PNG')
     print(f"Generated: {output_path} ({size}x{size})")
+
+
+def _paste_wide_art(img, name, sheet_w, sheet_x, sheet_y):
+    """AppIconArt（margin 付き）を、スコアシートが (sheet_x, sheet_y) から幅 sheet_w になるように貼る。"""
+    view = 100 + APP_ICON_MARGIN * 2
+    px = int(round(sheet_w / 80 * view))
+    art = _art(name, px)
+    unit = px / view
+    ox = int(round(sheet_x - (APP_ICON_MARGIN + 10) * unit))
+    oy = int(round(sheet_y - (APP_ICON_MARGIN + 17) * unit))
+    layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    layer.paste(art, (ox, oy), art)
+    img.alpha_composite(layer)
 
 
 def generate_adaptive_icon(output_path, size=1024):
     img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     sheet_w = int(size * 0.56)
-    sheet_h = int(size * 0.52)
+    sheet_h = sheet_w * 72 / 80
     sheet_x = (size - sheet_w) // 2 - int(size * 0.02)
-    sheet_y = (size - sheet_h) // 2 + int(size * 0.04)
-    img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h,
-                           num_rows=6, num_cols=6, score_font_size=int(sheet_h * 0.11))
-    tile_w = int(size * 0.27)
-    tile_h = int(size * 0.33)
-    img = draw_mahjong_tile(img, sheet_x + sheet_w - int(size * 0.04),
-                            sheet_y + sheet_h - int(size * 0.04), tile_w, tile_h, rotation=15)
+    sheet_y = int((size - sheet_h) // 2 + int(size * 0.02))
+    _paste_wide_art(img, 'appicon_wide', sheet_w, sheet_x, sheet_y)
     img.save(output_path, 'PNG')
     print(f"Generated: {output_path} ({size}x{size})")
 
@@ -267,21 +294,14 @@ def generate_adaptive_icon(output_path, size=1024):
 def generate_splash(output_path, width=1284, height=2778):
     img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     draw_gradient_bg(img, BG_DARK, (35, 70, 130))
-    draw = ImageDraw.Draw(img)
     sheet_w = int(width * 0.55)
-    sheet_h = int(sheet_w * 0.9)
+    sheet_h = int(sheet_w * 72 / 80)
     sheet_x = (width - sheet_w) // 2
     sheet_y = int(height * 0.25)
-    img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h,
-                           num_rows=6, num_cols=6, score_font_size=int(sheet_h * 0.11))
+    _paste_wide_art(img, 'appicon_wide', sheet_w, sheet_x, sheet_y)
     draw = ImageDraw.Draw(img)
-    tile_w = int(width * 0.22)
-    tile_h = int(tile_w * 1.23)
-    img = draw_mahjong_tile(img, sheet_x + sheet_w - int(width * 0.04),
-                            sheet_y + sheet_h - int(width * 0.04), tile_w, tile_h, rotation=15)
-    text_y = sheet_y + sheet_h + int(height * 0.04)
+    text_y = sheet_y + sheet_h + int(width * 0.2)  # 下にはみ出す牌と重ならない位置
     jp_large = font(int(width * 0.09), jp=True)
-    draw = ImageDraw.Draw(img)
     draw_centered_text(draw, "麻雀", width // 2, text_y, jp_large, WHITE)
     text_y2 = text_y + int(width * 0.12)
     jp_small = font(int(width * 0.055), jp=True)
@@ -292,24 +312,11 @@ def generate_splash(output_path, width=1284, height=2778):
 
 def generate_favicon(output_path, size=48):
     render_size = size * 8
-    img = Image.new('RGBA', (render_size, render_size), (0, 0, 0, 0))
-    bg = Image.new('RGBA', (render_size, render_size), (0, 0, 0, 0))
-    draw_gradient_bg(bg, BG_DARK, BG_MED)
-    mask = Image.new('L', (render_size, render_size), 0)
-    md = ImageDraw.Draw(mask)
-    md.rounded_rectangle((0, 0, render_size - 1, render_size - 1), radius=int(render_size * 0.18), fill=255)
-    img.paste(bg, (0, 0), mask)
-    margin = int(render_size * 0.10)
-    sheet_x = margin
-    sheet_y = int(render_size * 0.17)
-    sheet_w = int(render_size * 0.80)
-    sheet_h = int(render_size * 0.72)
-    img = draw_score_sheet(img, sheet_x, sheet_y, sheet_w, sheet_h,
-                           num_rows=5, num_cols=5, score_font_size=int(sheet_h * 0.13))
-    tile_w = int(render_size * 0.35)
-    tile_h = int(render_size * 0.43)
-    img = draw_mahjong_tile(img, sheet_x + sheet_w - int(render_size * 0.06),
-                            sheet_y + sheet_h - int(render_size * 0.06), tile_w, tile_h, rotation=15)
+    img, mask = _icon_background(render_size)
+    art = _art('appicon_small', render_size)
+    layer = Image.new('RGBA', (render_size, render_size), (0, 0, 0, 0))
+    layer.paste(art, (0, 0), mask)
+    img.alpha_composite(layer)
     img = img.resize((size, size), Image.LANCZOS)
     img.save(output_path, 'PNG')
     print(f"Generated: {output_path} ({size}x{size})")
@@ -420,6 +427,12 @@ def render_app_icons():
     import tempfile
     specs = [{'name': n, 'component': c, 'props': p, 'px': ICON_RENDER_PX} for n, c, p in ICON_SPECS]
     specs.append({'name': 'logo', 'component': 'TitleLogo', 'props': {'width': 320}, 'px': LOGO_RENDER_PX})
+    # アプリアイコンの絵柄（Issue #74）
+    specs.append({'name': 'appicon', 'component': 'AppIconArt', 'props': {'size': 100}, 'px': 1024})
+    specs.append({'name': 'appicon_wide', 'component': 'AppIconArt',
+                  'props': {'size': 100, 'rows': 6, 'cols': 6, 'margin': APP_ICON_MARGIN}, 'px': 1600})
+    specs.append({'name': 'appicon_small', 'component': 'AppIconArt',
+                  'props': {'size': 100, 'rows': 5, 'cols': 5}, 'px': 384})
     with tempfile.TemporaryDirectory() as tmp:
         spec_path = os.path.join(tmp, 'spec.json')
         with open(spec_path, 'w') as f:
@@ -1327,21 +1340,133 @@ YELLOW_LIVE = (249, 168, 37)  # #f9a825
 # ──────────────────────────────────────────────
 # 使い方ガイドの画像（Issue #72）
 # ──────────────────────────────────────────────
-# 使い方のモーダルは正方形に近い比率で表示するため、画面全体ではなく
-# 各ページで説明する部分を 4:3 で切り出す（掲載画像と同じモックアップを使う）。
+# 使い方のモーダルは正方形に近い比率で表示するため、画像は 4:3 で作る（Issue #72）。
+# Issue #74: 明るく楽しいトーンに作り替え。ページごとのパステル調のグラデーション背景に
+# 紙吹雪を散らし、各ページで説明する部分の画面を「カード」として少し傾けて載せ、
+# アプリの手書き風アイコンをステッカーのように貼る。説明文はアプリ側で一言だけ添える。
 
-GUIDE_ASPECT = 3 / 4          # 高さ / 幅
+GUIDE_ASPECT = 3 / 4          # 高さ / 幅（出力画像）
 GUIDE_OUT_W = 960             # 出力する画像の幅（px）
+GUIDE_CARD_W = 760            # 画面カードの幅（px）
+GUIDE_CARD_TOP = 64           # 画面カードの上端（px）。下端は画像の外まではみ出させる
+GUIDE_CARD_ASPECT = (GUIDE_OUT_W * GUIDE_ASPECT - GUIDE_CARD_TOP + 40) / GUIDE_CARD_W  # 切り出す高さ / 幅
+GUIDE_SEED = 74
+
+# ページごとの明るい配色（背景グラデーション上・下、アクセント）。SetupScreen の GUIDE_THEMES と揃える
+GUIDE_THEMES = [
+    ((255, 241, 118), (255, 183, 77), (255, 112, 67)),     # 1 レモン → オレンジ
+    ((178, 235, 242), (129, 212, 250), (41, 121, 255)),    # 2 ミント → スカイ
+    ((255, 224, 130), (255, 204, 128), (255, 160, 0)),     # 3 ひまわり
+    ((248, 187, 208), (225, 190, 231), (236, 64, 122)),    # 4 ピーチ → ラベンダー
+    ((200, 230, 201), (165, 214, 167), (67, 160, 71)),     # 5 ライム
+    ((255, 245, 157), (255, 213, 79), (245, 127, 23)),     # 6 たまご
+    ((209, 196, 233), (179, 229, 252), (124, 77, 255)),    # 7 ラベンダー → 空色
+]
+# 各ページに貼る手書き風アイコン
+GUIDE_STICKERS = ['tile', 'pencil', 'celebrate_chip', 'flag', 'broadcast', 'broadcast_dark', 'send']
+# ステッカーを貼る側（説明したい部分を隠さない側）
+GUIDE_STICKER_LEFT = [True, False, True, False, True, True, True]
+CONFETTI_COLORS = [(255, 82, 82), (255, 193, 7), (76, 175, 80), (33, 150, 243), (156, 39, 176), (255, 255, 255)]
 
 
-def save_guide(sc, top_dp, output_path):
-    """画面の top_dp（dp）から下を 4:3 で切り出して保存する。"""
+def _guide_background(index):
+    import random
+    top, bottom, accent = GUIDE_THEMES[index]
+    W, H = GUIDE_OUT_W, int(round(GUIDE_OUT_W * GUIDE_ASPECT))
+    bg = Image.new('RGBA', (W, H), (0, 0, 0, 255))
+    draw_gradient_bg(bg, top, bottom)
+    rnd = random.Random(GUIDE_SEED * 100 + index)
+    layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    # 大きな水玉（うっすら）
+    for _ in range(6):
+        r = rnd.randint(60, 140)
+        x, y = rnd.randint(-40, W + 40), rnd.randint(-40, H + 40)
+        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, 60))
+    # 紙吹雪（丸・細長い四角・きらきら）
+    for _ in range(46):
+        c = rnd.choice(CONFETTI_COLORS + [accent])
+        x, y = rnd.randint(0, W), rnd.randint(0, H)
+        kind = rnd.random()
+        if kind < 0.4:
+            r = rnd.randint(5, 11)
+            d.ellipse((x - r, y - r, x + r, y + r), fill=c + (220,))
+        elif kind < 0.8:
+            piece = Image.new('RGBA', (34, 34), (0, 0, 0, 0))
+            ImageDraw.Draw(piece).rounded_rectangle((11, 4, 21, 30), radius=4, fill=c + (230,))
+            piece = piece.rotate(rnd.randint(0, 180), resample=Image.BICUBIC)
+            layer.alpha_composite(piece, dest=(max(0, x - 17), max(0, y - 17)))
+        else:
+            r = rnd.randint(10, 16)
+            pts = []
+            for k in range(8):
+                a = math.pi / 4 * k
+                rr = r if k % 2 == 0 else r * 0.32
+                pts.append((x + math.cos(a) * rr, y + math.sin(a) * rr))
+            d.polygon(pts, fill=(255, 255, 255, 235))
+    bg.alpha_composite(layer)
+    return bg, accent
+
+
+def save_guide(sc, top_dp, output_path, index):
+    """画面の top_dp（dp）から下を切り出し、明るい背景にカードとして載せて 4:3 で保存する。"""
     img = sc.finish()
-    crop_h = sc.wdp * GUIDE_ASPECT
+    crop_h = sc.wdp * GUIDE_CARD_ASPECT
     top = max(0.0, min(top_dp, sc.hdp - crop_h))
-    box = (0, sc.px(top), sc.w, sc.px(top) + int(round(sc.w * GUIDE_ASPECT)))
-    out = img.crop(box).convert('RGB')
-    out = out.resize((GUIDE_OUT_W, int(round(GUIDE_OUT_W * GUIDE_ASPECT))), Image.LANCZOS)
+    box = (0, sc.px(top), sc.w, sc.px(top) + int(round(sc.w * GUIDE_CARD_ASPECT)))
+    shot = img.crop(box).convert('RGBA')
+    cw = GUIDE_CARD_W
+    ch = int(round(cw * GUIDE_CARD_ASPECT))
+    shot = shot.resize((cw, ch), Image.LANCZOS)
+
+    out, accent = _guide_background(index)
+    W, H = out.size
+
+    # カード: 白い太めのフチ + 角丸 + やわらかい影。左右交互に少しだけ傾ける
+    border = 14
+    radius = 30
+    card = Image.new('RGBA', (cw + border * 2, ch + border * 2), (0, 0, 0, 0))
+    ImageDraw.Draw(card).rounded_rectangle((0, 0, card.width - 1, card.height - 1), radius=radius + border,
+                                           fill=(255, 255, 255, 255))
+    mask = Image.new('L', shot.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=radius, fill=255)
+    card.paste(shot, (border, border), mask)
+    angle = 2.2 if index % 2 == 0 else -2.2
+    pad = 60
+    holder = Image.new('RGBA', (card.width + pad * 2, card.height + pad * 2), (0, 0, 0, 0))
+    shadow = Image.new('RGBA', holder.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((pad + 6, pad + 14, pad + card.width + 6, pad + card.height + 14),
+                                             radius=radius + border, fill=accent + (110,))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(16))
+    holder.alpha_composite(shadow)
+    holder.alpha_composite(card, dest=(pad, pad))
+    holder = holder.rotate(angle, resample=Image.BICUBIC)
+    cx = W // 2
+    out.alpha_composite(holder, dest=(cx - holder.width // 2, GUIDE_CARD_TOP - border - pad))
+
+    # 手書き風アイコンのステッカー（白い丸の台紙に貼って、カードの角に重ねる）
+    sticker = ICONS[GUIDE_STICKERS[index]]
+    sr = 74
+    disc = Image.new('RGBA', (sr * 2 + 40, sr * 2 + 40), (0, 0, 0, 0))
+    dd = ImageDraw.Draw(disc)
+    dd.ellipse((20 + 4, 20 + 8, 20 + sr * 2 + 4, 20 + sr * 2 + 8), fill=(0, 0, 0, 50))
+    disc = disc.filter(ImageFilter.GaussianBlur(4))
+    dd = ImageDraw.Draw(disc)
+    dd.ellipse((20, 20, 20 + sr * 2, 20 + sr * 2), fill=(255, 255, 255, 255), outline=accent + (255,), width=7)
+    icon_px = int(sr * 1.3)
+    ic = sticker.resize((icon_px, int(round(icon_px * sticker.height / sticker.width))), Image.LANCZOS)
+    # 白線のアイコン（送信・配信）は台紙が白だと見えないので、アクセント色の丸を下に敷く
+    if GUIDE_STICKERS[index] in ('send', 'broadcast'):
+        ImageDraw.Draw(disc).ellipse((20 + 12, 20 + 12, 20 + sr * 2 - 12, 20 + sr * 2 - 12), fill=accent + (255,))
+        icon_px = int(sr * 1.05)
+        ic = sticker.resize((icon_px, int(round(icon_px * sticker.height / sticker.width))), Image.LANCZOS)
+    disc.alpha_composite(ic, dest=(20 + sr - ic.width // 2, 20 + sr - ic.height // 2))
+    left = GUIDE_STICKER_LEFT[index]
+    disc = disc.rotate(-10 if left else 10, resample=Image.BICUBIC)
+    sx = 18 if left else W - disc.width - 18
+    out.alpha_composite(disc, dest=(sx, 0))
+
+    out = out.convert('RGB')
     out.save(output_path, 'PNG', optimize=True)
     print(f"Generated: {output_path} ({out.size[0]}x{out.size[1]})")
 
@@ -1354,24 +1479,24 @@ def generate_guide_images(output_dir, config=IPHONE):
     # 1. ゲームの始め方: 麻雀タイプとプレイヤー名
     sc = Screen(config)
     card_top = draw_setup_screen(sc)
-    save_guide(sc, card_top + 20 + 26 + 12 - 6, path('guide_1_setup.png'))
+    save_guide(sc, card_top + 20 + 26 + 12 - 6, path('guide_1_setup.png'), 0)
 
     # 2. スコアの記録: ポイント入力
     sc = Screen(config)
     draw_game_screen(sc, 0, 3, 2, 1, [32, -15, -8, -9], [0, 0, 0, 0])
-    save_guide(sc, sc.anchors['score_top'] - 10, path('guide_2_score.png'))
+    save_guide(sc, sc.anchors['score_top'] - 10, path('guide_2_score.png'), 1)
 
     # 3. チップの記録: チップ移動（チップ移動カードまでスクロール）
     chip_top, _ = game_offsets(config)
     sc = Screen(config)
     draw_game_screen(sc, chip_top - PAD, 4, 3, 1, [0] * 4, [3, -1, 2, -4])
-    save_guide(sc, sc.top + PAD - 10, path('guide_3_chip.png'))
+    save_guide(sc, sc.top + PAD - 10, path('guide_3_chip.png'), 2)
 
     # 4. ゲームの中断・終了: ヘッダーのボタン + ゲーム終了の確認
     sc = Screen(config)
     _, _, (totals, rank_counts) = draw_game_screen(sc, 0, 4, 3, 1, [0] * 4, [0] * 4)
     finish_modal(sc, totals, rank_counts)
-    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_4_finish.png'))
+    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_4_finish.png'), 3)
 
     # 5. リアルタイム共有（ホスト）: 6桁のコード
     sc = Screen(config)
@@ -1380,7 +1505,7 @@ def generate_guide_images(output_dir, config=IPHONE):
                LIVE_CODE, LIVE_EXPIRES,
                [('コードをコピー', GREEN, WHITE), ('閉じる', (240, 240, 240), LIGHT_TEXT)])
     a = sc.anchors
-    save_guide(sc, a['modal_top'] + a['modal_h'] / 2 - sc.wdp * GUIDE_ASPECT / 2, path('guide_5_live_share.png'))
+    save_guide(sc, a['modal_top'] + a['modal_h'] / 2 - sc.wdp * GUIDE_CARD_ASPECT / 2, path('guide_5_live_share.png'), 4)
 
     # 6. 閲覧モード（ゲスト・黄色基調）
     sc = Screen(config, live=True)
@@ -1392,7 +1517,7 @@ def generate_guide_images(output_dir, config=IPHONE):
                     'broadcast_dark', live_mode=True) + 16
     y = summary_cards(sc, y, totals, chip_totals, rank_counts) + 16
     history_table(sc, y, rows, editable=False)
-    save_guide(sc, sc.top + PAD - 10, path('guide_6_live_viewer.png'))
+    save_guide(sc, sc.top + PAD - 10, path('guide_6_live_viewer.png'), 5)
 
     # 7. 過去のゲームと共有: 終了済みゲームの共有コード
     sc = Screen(config)
@@ -1407,7 +1532,7 @@ def generate_guide_images(output_dir, config=IPHONE):
                SHARE_CODE, SHARE_EXPIRES,
                [('送信する', C_BLUE_BOTTOM, WHITE), ('コードをコピー', GREEN, WHITE),
                 ('閉じる', (240, 240, 240), LIGHT_TEXT)])
-    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_7_share.png'))
+    save_guide(sc, sc.anchors['modal_top'] - 10, path('guide_7_share.png'), 6)
 
 
 # ══════════════════════════════════════════════
@@ -1439,6 +1564,8 @@ if __name__ == '__main__':
                         help='App Store 掲載画像（assets/iphone, assets/ipad）と使い方ガイドの画像だけを生成する')
     parser.add_argument('--guide-only', action='store_true',
                         help='使い方ガイドの画像（assets/guide）だけを生成する')
+    parser.add_argument('--icons-only', action='store_true',
+                        help='アプリのアイコン（icon / adaptive-icon / splash / favicon）だけを生成する')
     args = parser.parse_args()
 
     assets_dir = os.path.join(ROOT_DIR, 'assets')
@@ -1448,14 +1575,16 @@ if __name__ == '__main__':
         generate_guide_images(os.path.join(assets_dir, 'guide'), IPHONE)
         raise SystemExit(0)
 
-    if not args.promos_only:
-        # App assets
+    prepare_promo_resources()
+
+    if args.icons_only or not args.promos_only:
+        # App assets（手書き風の絵柄を使うため、アイコンの書き出し後に生成する。Issue #74）
         generate_icon(os.path.join(assets_dir, 'icon.png'))
         generate_adaptive_icon(os.path.join(assets_dir, 'adaptive-icon.png'))
         generate_splash(os.path.join(assets_dir, 'splash.png'))
         generate_favicon(os.path.join(assets_dir, 'favicon.png'))
-
-    prepare_promo_resources()
+        if args.icons_only:
+            raise SystemExit(0)
 
     # iPhone promotional screenshots (1242x2688)
     generate_all_promos(os.path.join(assets_dir, 'iphone'), IPHONE)

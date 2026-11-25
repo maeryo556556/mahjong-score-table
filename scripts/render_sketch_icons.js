@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * アプリの手書き風アイコン・タイトルロゴ（components/icons/*.tsx）を PNG に書き出す。
+ * Issue #74: アプリアイコンの絵柄（AppIconArt）も書き出す。
  * generate_assets.py から呼び出し、App Store 掲載画像のモックアップに実物と同じ絵柄を貼り込む（Issue #70）。
  *
  * 使い方: node scripts/render_sketch_icons.js <spec.json> <出力ディレクトリ> [ロゴ用フォント.ttf]
@@ -82,7 +83,8 @@ Module._load = function load(request, parent, isMain) {
 const { renderToStaticMarkup } = require('react-dom/server');
 const icons = require(path.join(ROOT, 'components/icons/HandDrawnIcons.tsx'));
 const { TitleLogo } = require(path.join(ROOT, 'components/icons/TitleLogo.tsx'));
-const components = { ...icons, TitleLogo };
+const { AppIconArt } = require(path.join(ROOT, 'components/icons/AppIconArt.tsx'));
+const components = { ...icons, TitleLogo, AppIconArt };
 
 async function main() {
   const [specPath, outDir, logoFont] = process.argv.slice(2);

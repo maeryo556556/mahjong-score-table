@@ -272,3 +272,56 @@ export const canAddFavorite = (
   gameId: number,
   limit: number = MAX_FAVORITE_GAMES
 ): boolean => favoriteIds.includes(gameId) || favoriteIds.length < limit;
+
+// ---- 過去のゲームの複数選択・まとめて削除（Issue #74） ----
+
+export interface SelectableGame {
+  id: number;
+  favorite?: number;
+}
+
+/** 選択の切り替え（選択済みなら外し、未選択なら加える）。元の配列は変更しない */
+export const toggleSelection = (selected: readonly number[], id: number): number[] =>
+  selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
+
+/**
+ * 選択できるゲームの ID。ホストとして共有中（進行中）のゲームは一覧から削除させないため除く。
+ */
+export const selectableGameIds = (
+  games: readonly SelectableGame[],
+  excludeIds: ReadonlySet<number> = new Set(),
+): number[] => games.filter(g => !excludeIds.has(g.id)).map(g => g.id);
+
+/** 選択できるゲームがすべて選択されているか（選択できるゲームが無いときは false） */
+export const isAllSelected = (selected: readonly number[], selectableIds: readonly number[]): boolean =>
+  selectableIds.length > 0 && selectableIds.every(id => selected.includes(id));
+
+/**
+ * 「すべて選択」と「選択解除」の切り替え。すべて選択済みなら空に、そうでなければ選択できるゲームすべてにする。
+ */
+export const toggleSelectAll = (selected: readonly number[], selectableIds: readonly number[]): number[] =>
+  isAllSelected(selected, selectableIds) ? [] : [...selectableIds];
+
+/**
+ * 一覧の更新後に、もう存在しない（または選択できなくなった）ゲームを選択から外す。
+ */
+export const pruneSelection = (selected: readonly number[], selectableIds: readonly number[]): number[] => {
+  const ids = new Set(selectableIds);
+  return selected.filter(id => ids.has(id));
+};
+
+/** 選択中のゲームのうちお気に入りの件数 */
+export const countSelectedFavorites = (selected: readonly number[], games: readonly SelectableGame[]): number => {
+  const ids = new Set(selected);
+  return games.filter(g => ids.has(g.id) && g.favorite === 1).length;
+};
+
+/** まとめて削除の確認ダイアログの本文（件数と、お気に入りが含まれる場合はその旨） */
+export const buildBulkDeleteMessage = (count: number, favoriteCount: number): string => {
+  const lines = [`選択した${count}件のゲームを削除しますか？`];
+  if (favoriteCount > 0) {
+    lines.push(`お気に入り登録済みのゲームが${favoriteCount}件含まれています。`);
+  }
+  lines.push('この操作は取り消せません。');
+  return lines.join('\n');
+};
