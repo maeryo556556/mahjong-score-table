@@ -40,11 +40,12 @@ import {
   renamePlayers,
   saveJoinedSession,
   deleteJoinedSession,
+  findImportedGameBySessionCode,
 } from '../database';
 import { shareDataToRecords, validatePlayerNamesChange, hasPlayerNamesChanged, MAX_PLAYER_NAME_LENGTH } from '../utils';
 import type { ShareGameData } from '../utils';
-import { buildSessionUrl, buildJoinedSession } from '../liveSession';
-import type { LiveSessionStatus } from '../liveSession';
+import { buildSessionUrl, buildJoinedSession, describeLiveViewer } from '../liveSession';
+import type { LiveViewerStatus } from '../liveSession';
 import { getLiveSessionService } from '../firebase';
 import DrumRollInput from '../components/DrumRollInput';
 import HistoryTable from '../components/HistoryTable';
@@ -64,7 +65,16 @@ interface GameScreenProps {
   onSavedLiveGame?: (gameId: number) => void;
 }
 
-type LiveViewStatus = 'connecting' | LiveSessionStatus;
+type LiveViewStatus = LiveViewerStatus;
+
+// このセッションから取り込み済み（履歴に保存済み）の対局ID（Issue #72）
+const findSavedGameId = (code: string): number | null => {
+  try {
+    return findImportedGameBySessionCode(code)?.gameId ?? null;
+  } catch {
+    return null;
+  }
+};
 
 // 有効期限の表示（例: 2026/11/26 21:30）
 const formatExpiresAt = (expiresAt: number) =>
@@ -116,7 +126,10 @@ export default function GameScreen({
   const [liveGame, setLiveGame] = useState<ShareGameData | null>(null);
   const [liveExpiresAt, setLiveExpiresAt] = useState<number | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [savedLiveGameId, setSavedLiveGameId] = useState<number | null>(null);
+  // すでに取り込み済みのセッションを開いた場合は、最初から「保存済み」として扱い二重保存を防ぐ（Issue #72）
+  const [savedLiveGameId, setSavedLiveGameId] = useState<number | null>(() =>
+    liveSessionCode ? findSavedGameId(liveSessionCode) : null
+  );
 
   // ホスト: ゲーム途中のプレイヤー名変更（Issue #58）
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -141,6 +154,15 @@ export default function GameScreen({
   useEffect(() => {
     if (!liveSessionCode) return;
     let receivedData = false;
+    // セッションを受信できなくても、取り込み済みの対局があればエラーにせずそちらを開く（Issue #72）
+    const openSavedGameInstead = (): boolean => {
+      const savedId = findSavedGameId(liveSessionCode);
+      if (savedId === null) return false;
+      Alert.alert('取り込み済み', 'この対局はすでに取り込み済みです。\n保存済みの対局を開きます', [
+        { text: 'OK', onPress: () => onSavedLiveGame?.(savedId) },
+      ]);
+      return true;
+    };
     const unsubscribe = getLiveSessionService().join(liveSessionCode, (event) => {
       if (event.type === 'snapshot') {
         receivedData = true;
@@ -173,15 +195,17 @@ export default function GameScreen({
         }
         if (receivedData) {
           setLiveStatus('ended');
-        } else {
+        } else if (!openSavedGameInstead()) {
           Alert.alert('参加エラー', `セッション「${liveSessionCode}」が見つかりません。\nコードを確認してください`, [
             { text: 'OK', onPress: onFinish },
           ]);
         }
       } else if (!receivedData) {
-        Alert.alert('参加エラー', 'セッションに接続できませんでした。通信環境を確認してください', [
-          { text: 'OK', onPress: onFinish },
-        ]);
+        if (!openSavedGameInstead()) {
+          Alert.alert('参加エラー', 'セッションに接続できませんでした。通信環境を確認してください', [
+            { text: 'OK', onPress: onFinish },
+          ]);
+        }
       } else {
         setLiveError('接続が切れました。表示は最後に受信した内容です');
       }
@@ -243,13 +267,23 @@ export default function GameScreen({
 
   const handleSaveLiveGame = () => {
     if (!liveGame || savedLiveGameId !== null) return;
+    // 別の画面などで既に保存していた場合は二重に保存しない（Issue #72）
+    const alreadySavedId = liveSessionCode ? findSavedGameId(liveSessionCode) : null;
+    if (alreadySavedId !== null) {
+      setSavedLiveGameId(alreadySavedId);
+      Alert.alert('取り込み済み', 'この対局はすでに履歴に保存されています', [
+        { text: '閲覧する', onPress: () => onSavedLiveGame?.(alreadySavedId) },
+        { text: 'OK' },
+      ]);
+      return;
+    }
     try {
       // セッションがまだ進行中なら受信元を記録し、有効な間は過去のゲームからライブ閲覧へ入れるようにする
       const activeSession =
         liveSessionCode && liveStatus === 'live' && liveExpiresAt !== null && Date.now() < liveExpiresAt
           ? { code: liveSessionCode, expiresAt: liveExpiresAt }
           : null;
-      const newGameId = importShareData(liveGame, activeSession);
+      const newGameId = importShareData(liveGame, activeSession, liveSessionCode ?? null);
       setSavedLiveGameId(newGameId);
       // 履歴に保存した対局は一覧の保存済み項目から開けるので、参加記録は消しておく
       if (liveSessionCode) {
@@ -536,7 +570,9 @@ export default function GameScreen({
   };
 
   // 閲覧モード（Issue #53, #58）: ゲストの閲覧中だけ背景を黄色基調にする。ホストの共有中は通常の配色
-  const isLiveMode = isLiveViewer && (liveStatus === 'live' || liveStatus === 'connecting');
+  // Issue #72: ホストが共有を終了した後・有効期限切れの後も閲覧モード（黄色）のまま表示する
+  const liveViewer = describeLiveViewer(liveStatus, liveExpiresAt ? formatExpiresAt(liveExpiresAt) : null);
+  const isLiveMode = isLiveViewer && liveViewer.liveMode;
   // ゲスト: 最初のデータを受け取るまでは総合スコア・記録履歴も表示しない（Issue #58）
   const isLiveConnecting = isLiveViewer && !liveGame;
   const gradientColors: [string, string] = isLiveMode ? ['#f9a825', '#fdd835'] : ['#1e3c72', '#2a5298'];
@@ -558,10 +594,8 @@ export default function GameScreen({
                   <Text style={[styles.backButtonText, isLiveMode && styles.liveModeText]}>← 戻る</Text>
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, isLiveMode && styles.liveModeText]}>{gameStartDate}</Text>
-                <View style={[styles.liveBadge, liveStatus !== 'live' && styles.liveBadgeInactive]}>
-                  <Text style={styles.liveBadgeText}>
-                    {liveStatus === 'live' ? '閲覧モード' : liveStatus === 'connecting' ? '接続中' : '終了'}
-                  </Text>
+                <View style={[styles.liveBadge, !liveViewer.badgeActive && styles.liveBadgeInactive]}>
+                  <Text style={styles.liveBadgeText}>{liveViewer.badge}</Text>
                 </View>
               </>
             ) : readOnly ? (
@@ -610,7 +644,7 @@ export default function GameScreen({
               <View style={styles.iconTitleRow}>
                 <BroadcastIcon size={18} color={isLiveMode ? '#3e2723' : '#fff'} />
                 <Text style={[styles.liveBannerTitle, isLiveMode && styles.liveModeText]}>
-                  {isLiveMode ? '閲覧中' : '閲覧モード'}
+                  {liveViewer.title}
                 </Text>
               </View>
               {liveStatus === 'connecting' ? (
@@ -627,15 +661,11 @@ export default function GameScreen({
                 </View>
               ) : (
                 <Text style={[styles.liveBannerText, isLiveMode && styles.liveModeSubText]}>
-                  {liveStatus === 'live'
-                    ? `ホストの入力が自動で反映されます（編集不可）${liveExpiresAt ? `\n有効期限: ${formatExpiresAt(liveExpiresAt)}` : ''}`
-                    : liveStatus === 'ended'
-                      ? 'ホストが共有を終了しました'
-                      : 'セッションの有効期限が切れました'}
+                  {liveViewer.message}
                 </Text>
               )}
               {liveError && <Text style={[styles.liveBannerError, isLiveMode && styles.liveBannerErrorLive]}>{liveError}</Text>}
-              {(liveStatus === 'ended' || liveStatus === 'expired' || liveError) && liveGame && (
+              {(liveViewer.stopped || liveError) && liveGame && (
                 <TouchableOpacity
                   style={[styles.liveBannerButton, savedLiveGameId !== null && styles.liveBannerButtonDisabled]}
                   onPress={handleSaveLiveGame}

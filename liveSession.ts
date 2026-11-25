@@ -310,3 +310,91 @@ export const selectRejoinableSessions = (
   sessions
     .filter(s => isLocalSessionActive(s.code, s.expiresAt, now) && !savedSessionCodes.has(s.code))
     .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+
+// ---------- 閲覧モードの表示（Issue #72） ----------
+
+export type LiveViewerStatus = 'connecting' | LiveSessionStatus;
+
+export interface LiveViewerDisplay {
+  /** 閲覧モード（黄色基調）で表示するか。ゲストの閲覧中は共有終了・期限切れ後もそのまま */
+  liveMode: boolean;
+  /** ヘッダー右のバッジ */
+  badge: string;
+  /** バッジを強調色（赤）で表示するか（false は灰色） */
+  badgeActive: boolean;
+  /** バナーの見出し */
+  title: string;
+  /** バナーの説明文（接続中は null: ローディング表示にする） */
+  message: string | null;
+  /** 同期が止まっている（共有終了・期限切れ）か */
+  stopped: boolean;
+}
+
+/**
+ * ゲストの閲覧画面（ヘッダーのバッジ・閲覧バナー）に出す内容を決める。
+ * ホストが共有を終了した後や有効期限が切れた後も閲覧モード（黄色の背景）のまま表示し、
+ * バナーで同期が止まったことを伝える（Issue #72）。
+ */
+export const describeLiveViewer = (status: LiveViewerStatus, expiresAtText: string | null): LiveViewerDisplay => {
+  switch (status) {
+    case 'connecting':
+      return { liveMode: true, badge: '接続中', badgeActive: false, title: '閲覧中', message: null, stopped: false };
+    case 'live':
+      return {
+        liveMode: true,
+        badge: '閲覧モード',
+        badgeActive: true,
+        title: '閲覧中',
+        message: `ホストの入力が自動で反映されます（編集不可）${expiresAtText ? `\n有効期限: ${expiresAtText}` : ''}`,
+        stopped: false,
+      };
+    case 'ended':
+      return {
+        liveMode: true,
+        badge: '閲覧モード',
+        badgeActive: false,
+        title: '閲覧中（共有終了）',
+        message: 'ホストが共有を終了しました\n表示は最後に受信した内容です（以降は更新されません）',
+        stopped: true,
+      };
+    case 'expired':
+      return {
+        liveMode: true,
+        badge: '閲覧モード',
+        badgeActive: false,
+        title: '閲覧中（有効期限切れ）',
+        message: 'セッションの有効期限が切れました\n表示は最後に受信した内容です（以降は更新されません）',
+        stopped: true,
+      };
+  }
+};
+
+// ---------- 取り込み済みコードの再取り込み（Issue #72） ----------
+
+/** 端末に保存済みの、セッションから取り込んだ対局 */
+export interface ImportedGameRef {
+  gameId: number;
+  /** 受信元セッションがまだ進行中として記録されている場合のセッション（有効期限つき） */
+  liveSession: { code: string; expiresAt: number } | null;
+}
+
+export type ImportCodeAction =
+  /** 未取り込み: セッションに参加する */
+  | { type: 'join'; code: string }
+  /** 取り込み済みで受信元セッションがまだ有効: 閲覧モードで開く（保存済みとして表示） */
+  | { type: 'openLive'; code: string; gameId: number }
+  /** 取り込み済み: 保存済みの対局を開く */
+  | { type: 'openSaved'; gameId: number };
+
+/**
+ * 「ゲームを取り込む」に入力されたコードの扱いを決める。
+ * すでに取り込み（履歴に保存）済みのコードはエラーにせず、既存の対局を開く。
+ */
+export const resolveImportCode = (code: string, imported: ImportedGameRef | null, now: number): ImportCodeAction => {
+  if (!imported) return { type: 'join', code };
+  const live = imported.liveSession;
+  if (live && live.code === code && isLocalSessionActive(live.code, live.expiresAt, now)) {
+    return { type: 'openLive', code, gameId: imported.gameId };
+  }
+  return { type: 'openSaved', gameId: imported.gameId };
+};

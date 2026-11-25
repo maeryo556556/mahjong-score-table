@@ -21,6 +21,8 @@ import {
   createLiveSessionService,
   buildJoinedSession,
   selectRejoinableSessions,
+  describeLiveViewer,
+  resolveImportCode,
 } from '../liveSession';
 import type { SessionBackend, SessionDoc, JoinEvent, JoinedSession, LiveSessionSnapshot } from '../liveSession';
 import { shareDataToRecords } from '../utils';
@@ -581,5 +583,66 @@ describe('selectRejoinableSessions', () => {
     const sessions = [make('111111', NOW + 1000, NOW - 300), make('222222', NOW + 1000, NOW - 100)];
     selectRejoinableSessions(sessions, new Set(), NOW);
     expect(sessions.map(s => s.code)).toEqual(['111111', '222222']);
+  });
+});
+
+describe('describeLiveViewer（Issue #72: 共有終了後も閲覧モードのまま表示）', () => {
+  it('どの状態でも閲覧モード（黄色の背景）で表示する', () => {
+    for (const status of ['connecting', 'live', 'ended', 'expired'] as const) {
+      expect(describeLiveViewer(status, null).liveMode).toBe(true);
+    }
+  });
+
+  it('進行中は閲覧中として有効期限を表示し、同期は止まっていない', () => {
+    const d = describeLiveViewer('live', '2026/11/26 21:30');
+    expect(d.badge).toBe('閲覧モード');
+    expect(d.badgeActive).toBe(true);
+    expect(d.title).toBe('閲覧中');
+    expect(d.message).toContain('有効期限: 2026/11/26 21:30');
+    expect(d.stopped).toBe(false);
+  });
+
+  it('ホストが共有を終了した場合は閲覧モードのまま終了したことを表示する', () => {
+    const d = describeLiveViewer('ended', '2026/11/26 21:30');
+    expect(d.badge).toBe('閲覧モード');
+    expect(d.badgeActive).toBe(false);
+    expect(d.title).toContain('共有終了');
+    expect(d.message).toContain('ホストが共有を終了しました');
+    expect(d.stopped).toBe(true);
+  });
+
+  it('有効期限切れも閲覧モードの枠組みで表示し、同期は止まる', () => {
+    const d = describeLiveViewer('expired', null);
+    expect(d.badge).toBe('閲覧モード');
+    expect(d.title).toContain('有効期限切れ');
+    expect(d.message).toContain('有効期限が切れました');
+    expect(d.stopped).toBe(true);
+  });
+
+  it('接続中はローディング表示（説明文なし）', () => {
+    const d = describeLiveViewer('connecting', null);
+    expect(d.badge).toBe('接続中');
+    expect(d.message).toBeNull();
+    expect(d.stopped).toBe(false);
+  });
+});
+
+describe('resolveImportCode（Issue #72: 取り込み済みコードの再取り込み）', () => {
+  it('未取り込みのコードはセッションに参加する', () => {
+    expect(resolveImportCode('123456', null, NOW)).toEqual({ type: 'join', code: '123456' });
+  });
+
+  it('取り込み済みで受信元セッションが有効なら閲覧モードで開く', () => {
+    const imported = { gameId: 7, liveSession: { code: '123456', expiresAt: NOW + 1000 } };
+    expect(resolveImportCode('123456', imported, NOW)).toEqual({ type: 'openLive', code: '123456', gameId: 7 });
+  });
+
+  it('取り込み済みで受信元セッションが期限切れなら保存済みの対局を開く（エラーにしない）', () => {
+    const imported = { gameId: 7, liveSession: { code: '123456', expiresAt: NOW } };
+    expect(resolveImportCode('123456', imported, NOW)).toEqual({ type: 'openSaved', gameId: 7 });
+  });
+
+  it('終了後に取り込んだ（受信元セッションの記録なし）対局は保存済みの対局を開く', () => {
+    expect(resolveImportCode('123456', { gameId: 3, liveSession: null }, NOW)).toEqual({ type: 'openSaved', gameId: 3 });
   });
 });
