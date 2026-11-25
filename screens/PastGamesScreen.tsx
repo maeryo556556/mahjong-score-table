@@ -277,7 +277,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     accessibilityRole={selectionMode ? 'checkbox' : 'button'}
                     accessibilityState={selectionMode ? { checked: selected, disabled } : undefined}
                   >
-                    {/* チェックボックスはカード左側に常に確保した余白へ絶対配置で重ね、中身の位置を動かさない（Issue #90） */}
+                    {/* チェックボックスは選択モードのときだけカード左上の角にまたがるよう絶対配置で重ね、中身の位置を動かさない（Issue #90, #96） */}
                     {selectionMode && (
                       <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
                         {selected && <Text style={styles.checkboxMark}>✓</Text>}
@@ -453,11 +453,13 @@ const styles = StyleSheet.create({
   gameCardDisabled: {
     opacity: 0.5,
   },
-  // カード左側の余白（gameCard の paddingLeft）に重ねる。レイアウトには影響しない（Issue #90）
+  // カード左上の角にまたがるように重ねる。絶対配置なのでレイアウトには影響しない（Issue #90, #96）
+  // 絶対配置の基準は枠線の内側なので、枠線 2px + チェックボックスの半分 11px だけずらして中心を角に合わせる
   checkbox: {
     position: 'absolute',
-    top: 16,
-    left: 12,
+    top: -13,
+    left: -13,
+    zIndex: 1,
     width: 22,
     height: 22,
     borderRadius: 6,
@@ -559,15 +561,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  // 枠線は常に2px（透明）確保し、左側にはチェックボックス用の余白を常に確保する。
-  // 選択モードの出入りや選択・解除でカードの大きさと中身の位置が変わらないようにするため（Issue #90）
+  // 枠線は常に2px（透明）確保し、選択モードの出入りや選択・解除でカードの大きさと中身の位置が変わらないようにする（Issue #90）。
+  // チェックボックスは角に重ねるので、左側に専用の余白は設けない（Issue #96）
   gameCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 2,
     borderColor: 'transparent',
     padding: 16,
-    paddingLeft: 44,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
