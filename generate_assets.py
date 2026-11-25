@@ -1447,8 +1447,8 @@ def generate_promo_past_games(output_path, config=IPHONE):
     x, w = PAD, sc.wdp - 2 * PAD
     y = sc.top + 12
     y = back_header(sc, y, '過去のゲーム', ('選択', WHITE_A(0.2), WHITE), title_size=20, right_min_w=70) + 12
-    note = ('星マークをタップでお気に入り（最大20件）。長押しで選択して削除できます。'
-            '保存はお気に入りを含めて100件までで、超えるとお気に入り以外の古いものから自動で削除されます。')
+    # 説明文は簡潔な1行だけ（Issue #88。PastGamesScreen の limitNote と揃える）
+    note = '保存は最大100件まで（お気に入りは最大20件）'
     y = sc.paragraph(x, y, note, 12, WHITE_A(0.85), w, 18) + 12
     for date, count, names, hanchan, fav, imported, joined, scores in PAST_GAMES:
         ix, iw = x + 16, w - 32
