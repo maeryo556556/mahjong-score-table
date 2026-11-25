@@ -1510,19 +1510,14 @@ YELLOW_LIVE = (249, 168, 37)  # #f9a825
 # ──────────────────────────────────────────────
 # 使い方のモーダルは正方形に近い比率で表示するため、画像は 4:3 で作る（Issue #72）。
 # Issue #74: 明るく楽しいトーンに作り替え。ページごとのパステル調のグラデーション背景に
-# 紙吹雪を散らし、各ページで説明する部分の画面を「カード」として載せ、
+# 紙吹雪を散らし、各ページで説明する部分の画面を「カード」として少し傾けて載せ、
 # アプリの手書き風アイコンをステッカーのように貼る。説明文はアプリ側で一言だけ添える。
-# Issue #80: カードは傾けず、全体が画像内に収まるよう中央に均等な余白で配置する
-# （傾きのせいで端に寄り、文字が見切れていたため）。
 
 GUIDE_ASPECT = 3 / 4          # 高さ / 幅（出力画像）
 GUIDE_OUT_W = 960             # 出力する画像の幅（px）
-GUIDE_CARD_BORDER = 14        # カードの白いフチ（px）
-GUIDE_CARD_MARGIN_Y = 40      # カード（フチ込み）の上下の余白（px）。上下で同じ
-GUIDE_CARD_ASPECT = 0.86      # 切り出す画面の 高さ / 幅（従来とほぼ同じ範囲が見えるように）
-# 画面の高さは上下の余白から決め、幅は比率から決める。左右の余白は中央寄せで同じになる
-GUIDE_CARD_H = int(round(GUIDE_OUT_W * GUIDE_ASPECT)) - 2 * GUIDE_CARD_MARGIN_Y - 2 * GUIDE_CARD_BORDER
-GUIDE_CARD_W = int(round(GUIDE_CARD_H / GUIDE_CARD_ASPECT))
+GUIDE_CARD_W = 760            # 画面カードの幅（px）
+GUIDE_CARD_TOP = 64           # 画面カードの上端（px）。下端は画像の外まではみ出させる
+GUIDE_CARD_ASPECT = (GUIDE_OUT_W * GUIDE_ASPECT - GUIDE_CARD_TOP + 40) / GUIDE_CARD_W  # 切り出す高さ / 幅
 GUIDE_SEED = 74
 
 # ページごとの明るい配色（背景グラデーション上・下、アクセント）。SetupScreen の GUIDE_THEMES と揃える
@@ -1588,14 +1583,15 @@ def save_guide(sc, top_dp, output_path, index):
     top = max(0.0, min(top_dp, sc.hdp - crop_h))
     box = (0, sc.px(top), sc.w, sc.px(top) + int(round(sc.w * GUIDE_CARD_ASPECT)))
     shot = img.crop(box).convert('RGBA')
-    cw, ch = GUIDE_CARD_W, GUIDE_CARD_H
+    cw = GUIDE_CARD_W
+    ch = int(round(cw * GUIDE_CARD_ASPECT))
     shot = shot.resize((cw, ch), Image.LANCZOS)
 
     out, accent = _guide_background(index)
     W, H = out.size
 
-    # カード: 白い太めのフチ + 角丸 + やわらかい影。傾けずに中央へ置く（Issue #80）
-    border = GUIDE_CARD_BORDER
+    # カード: 白い太めのフチ + 角丸 + やわらかい影。左右交互に少しだけ傾ける
+    border = 14
     radius = 30
     card = Image.new('RGBA', (cw + border * 2, ch + border * 2), (0, 0, 0, 0))
     ImageDraw.Draw(card).rounded_rectangle((0, 0, card.width - 1, card.height - 1), radius=radius + border,
@@ -1603,19 +1599,22 @@ def save_guide(sc, top_dp, output_path, index):
     mask = Image.new('L', shot.size, 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=radius, fill=255)
     card.paste(shot, (border, border), mask)
-    card_x = (W - card.width) // 2
-    card_y = (H - card.height) // 2
-    shadow = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle((card_x, card_y + 8, card_x + card.width, card_y + card.height + 8),
+    angle = 2.2 if index % 2 == 0 else -2.2
+    pad = 60
+    holder = Image.new('RGBA', (card.width + pad * 2, card.height + pad * 2), (0, 0, 0, 0))
+    shadow = Image.new('RGBA', holder.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((pad + 6, pad + 14, pad + card.width + 6, pad + card.height + 14),
                                              radius=radius + border, fill=accent + (110,))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(14))
-    out.alpha_composite(shadow)
-    out.alpha_composite(card, dest=(card_x, card_y))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(16))
+    holder.alpha_composite(shadow)
+    holder.alpha_composite(card, dest=(pad, pad))
+    holder = holder.rotate(angle, resample=Image.BICUBIC)
+    cx = W // 2
+    out.alpha_composite(holder, dest=(cx - holder.width // 2, GUIDE_CARD_TOP - border - pad))
 
-    # 手書き風アイコンのステッカー（白い丸の台紙に貼る）
-    # Issue #80: カードの中身を隠さないよう、左右の余白に収まる大きさで余白の中に貼る
+    # 手書き風アイコンのステッカー（白い丸の台紙に貼って、カードの角に重ねる）
     sticker = ICONS[GUIDE_STICKERS[index]]
-    sr = min(56, card_x // 2 - 4)
+    sr = 74
     disc = Image.new('RGBA', (sr * 2 + 40, sr * 2 + 40), (0, 0, 0, 0))
     dd = ImageDraw.Draw(disc)
     dd.ellipse((20 + 4, 20 + 8, 20 + sr * 2 + 4, 20 + sr * 2 + 8), fill=(0, 0, 0, 50))
@@ -1632,9 +1631,8 @@ def save_guide(sc, top_dp, output_path, index):
     disc.alpha_composite(ic, dest=(20 + sr - ic.width // 2, 20 + sr - ic.height // 2))
     left = GUIDE_STICKER_LEFT[index]
     disc = disc.rotate(-10 if left else 10, resample=Image.BICUBIC)
-    scx = card_x // 2 if left else W - card_x // 2
-    scy = card_y + sr + 24
-    out.alpha_composite(disc, dest=(scx - disc.width // 2, scy - disc.height // 2))
+    sx = 18 if left else W - disc.width - 18
+    out.alpha_composite(disc, dest=(sx, 0))
 
     out = out.convert('RGB')
     out.save(output_path, 'PNG', optimize=True)
