@@ -219,7 +219,7 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
           {!selectionMode && joinedSessions.map(session => (
             <TouchableOpacity
               key={`joined-${session.code}`}
-              style={[styles.gameCard, styles.gameCardLive]}
+              style={[styles.gameCard, styles.gameCardLive, styles.joinedCard]}
               onPress={() => onJoinLiveSession(session.code)}
               onLongPress={() => handleRemoveJoinedSession(session)}
               delayLongPress={800}
@@ -260,10 +260,10 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
               // 進行中のゲームとお気に入りのゲーム（Issue #78）はここからは削除させない
               const selectable = isGameSelectable(game, liveHostIds);
               const disabled = selectionMode && !selectable;
-              // 選択モード中のお気に入りには「削除不可」のワッペンを重ねる（Issue #88）
+              // 選択モード中のお気に入りには「削除不可」の帯をカードの縦中央に重ねる（Issue #88, #90）
               const showUndeletableBadge = selectionMode && !isHostLive && game.favorite === 1;
               return (
-                // ワッペンはカードの半透明（disabled）の影響を受けないよう、カードの外側に重ねる
+                // ワッペン（帯）はカードの半透明（disabled）の影響を受けないよう、カードの外側に重ねる
                 <View key={game.id} style={styles.gameCardWrapper}>
                   <TouchableOpacity
                     style={[
@@ -277,13 +277,14 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     accessibilityRole={selectionMode ? 'checkbox' : 'button'}
                     accessibilityState={selectionMode ? { checked: selected, disabled } : undefined}
                   >
+                    {/* チェックボックスはカード左側に常に確保した余白へ絶対配置で重ね、中身の位置を動かさない（Issue #90） */}
+                    {selectionMode && (
+                      <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
+                        {selected && <Text style={styles.checkboxMark}>✓</Text>}
+                      </View>
+                    )}
                     <View style={styles.gameCardHeader}>
                       <View style={styles.gameDateRow}>
-                        {selectionMode && (
-                          <View style={[styles.checkbox, selected && styles.checkboxChecked, disabled && styles.checkboxDisabled]}>
-                            {selected && <Text style={styles.checkboxMark}>✓</Text>}
-                          </View>
-                        )}
                         <Text style={styles.gameDate}>{game.start_date}</Text>
                         {live && (
                           <View style={styles.liveBadge}>
@@ -342,12 +343,10 @@ export default function PastGamesScreen({ onSelectGame, onBack, onResumeLiveGame
                     </View>
                   </TouchableOpacity>
                   {showUndeletableBadge && (
-                    <View
-                      style={styles.undeletableBadge}
-                      pointerEvents="none"
-                      accessibilityLabel="お気に入りのため削除不可"
-                    >
-                      <Text style={styles.undeletableBadgeText}>お気に入りのため削除不可</Text>
+                    <View style={styles.undeletableBadgeOverlay} pointerEvents="none">
+                      <View style={styles.undeletableBadge} accessibilityLabel="お気に入りのため削除不可">
+                        <Text style={styles.undeletableBadgeText}>お気に入りのため削除不可</Text>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -441,15 +440,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
+  // 枠線の太さは gameCard で常に確保しているので、選択時は色だけを変える（Issue #90）
   gameCardSelected: {
-    borderWidth: 2,
     borderColor: '#dc3545',
     backgroundColor: '#fff5f5',
   },
   gameCardDisabled: {
     opacity: 0.5,
   },
+  // カード左側の余白（gameCard の paddingLeft）に重ねる。レイアウトには影響しない（Issue #90）
   checkbox: {
+    position: 'absolute',
+    top: 16,
+    left: 12,
     width: 22,
     height: 22,
     borderRadius: 6,
@@ -522,38 +525,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6c757d',
   },
+  // 参加中の対局カードはラッパーを持たないので、カード自身に間隔を付ける
+  joinedCard: {
+    marginBottom: 12,
+  },
   gameCardWrapper: {
     position: 'relative',
+    marginBottom: 12,
   },
-  // お気に入りのため削除不可のワッペン（Issue #88）: カードの右上に斜めに貼ったような見た目
-  undeletableBadge: {
+  // お気に入りのため削除不可のワッペン（Issue #88, #90）: カードの縦中央にカード幅いっぱいの紺色の帯を重ねる
+  undeletableBadgeOverlay: {
     position: 'absolute',
-    top: -6,
-    right: 10,
-    backgroundColor: '#f9a825',
-    borderWidth: 2,
-    borderColor: '#fff',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    transform: [{ rotate: '6deg' }],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 6,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
     zIndex: 2,
+    elevation: 6,
+  },
+  undeletableBadge: {
+    backgroundColor: '#1e3c72',
+    paddingVertical: 8,
+    alignItems: 'center',
   },
   undeletableBadgeText: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#3e2723',
+    color: '#fff',
   },
+  // 枠線は常に2px（透明）確保し、左側にはチェックボックス用の余白を常に確保する。
+  // 選択モードの出入りや選択・解除でカードの大きさと中身の位置が変わらないようにするため（Issue #90）
   gameCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
     padding: 16,
-    marginBottom: 12,
+    paddingLeft: 44,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -581,7 +590,6 @@ const styles = StyleSheet.create({
   },
   gameCardLive: {
     backgroundColor: '#fff8e1',
-    borderWidth: 2,
     borderColor: '#f9a825',
   },
   liveBadge: {
