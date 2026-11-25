@@ -32,12 +32,20 @@ type RenderedPath =
   | { type: 'path'; d: string; stroke?: ColorRef; fill?: ColorRef; width?: number; opacity?: number }
   | { type: 'circle'; cx: number; cy: number; r: number; fill: ColorRef };
 
-function strokePath(shape: Shape, seed: number): string {
+/** 線の揺らぎの調整（指定しなければ sketch.ts の既定値。アプリ内のアイコンは既定のまま） */
+export interface SketchWobble {
+  /** 揺らぎの大きさ（viewBox 単位） */
+  amplitude?: number;
+  /** 直線に揺らぎ点を入れる間隔（viewBox 単位） */
+  step?: number;
+}
+
+function strokePath(shape: Shape, seed: number, wobble?: SketchWobble): string {
   switch (shape.kind) {
     case 'line':
-      return wobblyLine(shape.points, seed, { closed: shape.closed });
+      return wobblyLine(shape.points, seed, { closed: shape.closed, ...wobble });
     case 'curve':
-      return wobblyCurve(shape.points, seed, { closed: shape.closed });
+      return wobblyCurve(shape.points, seed, { closed: shape.closed, amplitude: wobble?.amplitude });
     case 'circle':
       return wobblyCircle(shape.cx, shape.cy, shape.r, seed);
     default:
@@ -46,7 +54,7 @@ function strokePath(shape: Shape, seed: number): string {
 }
 
 /** 図形の一覧から描画用のパスを作る。塗り → 本線 → 二度書きの順に重ねる */
-function buildPaths(shapes: Shape[], seed: number): RenderedPath[] {
+function buildPaths(shapes: Shape[], seed: number, wobble?: SketchWobble): RenderedPath[] {
   const fills: RenderedPath[] = [];
   const strokes: RenderedPath[] = [];
   shapes.forEach((shape, i) => {
@@ -70,8 +78,8 @@ function buildPaths(shapes: Shape[], seed: number): RenderedPath[] {
     }
     const width = (shape.width ?? 1) * BASE_WIDTH;
     const color = shape.color ?? 'stroke';
-    strokes.push({ type: 'path', d: strokePath(shape, s), stroke: color, width });
-    strokes.push({ type: 'path', d: strokePath(shape, s + 101), stroke: color, width: width * 0.55, opacity: OVERDRAW_OPACITY });
+    strokes.push({ type: 'path', d: strokePath(shape, s, wobble), stroke: color, width });
+    strokes.push({ type: 'path', d: strokePath(shape, s + 101, wobble), stroke: color, width: width * 0.55, opacity: OVERDRAW_OPACITY });
   });
   return [...fills, ...strokes];
 }
@@ -97,14 +105,22 @@ export function SketchShapes({
   color,
   fill,
   transform,
+  wobble,
 }: {
   shapes: Shape[];
   seed: number;
   color: string;
   fill: string;
   transform?: string;
+  /** 線の揺らぎを弱めたいとき（アプリアイコンなど）に指定する。省略時は従来どおり */
+  wobble?: SketchWobble;
 }) {
-  const paths = useMemo(() => buildPaths(shapes, seed), [shapes, seed]);
+  const amplitude = wobble?.amplitude;
+  const step = wobble?.step;
+  const paths = useMemo(
+    () => buildPaths(shapes, seed, amplitude === undefined && step === undefined ? undefined : { amplitude, step }),
+    [shapes, seed, amplitude, step],
+  );
   const resolve = (c: ColorRef | undefined) => (c === 'stroke' ? color : c === 'fill' ? fill : c);
   return (
     <G transform={transform}>
