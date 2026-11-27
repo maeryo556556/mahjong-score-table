@@ -1,0 +1,52 @@
+name: Cleanup expired sessions
+
+# 期限切れリアルタイム共有セッションの掃除（Issue #102）
+# - 毎月1日 03:00 UTC に自動実行（本削除）
+# - 手動実行（workflow_dispatch）も可能。dry_run=true（デフォルト）なら削除せず対象一覧のみ出力
+# 必要な Secrets: FIREBASE_SERVICE_ACCOUNT（Firebase サービスアカウントキー JSON）
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'ドライラン（削除せず対象件数・コード一覧のみ出力）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-expired-sessions
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # アプリ本体の package.json には追加せず、このワークフロー専用の作業ディレクトリにインストールする
+      # （リポジトリ直下で npm install するとアプリ全体の依存まで入るため分離する）
+      - name: Install firebase-admin
+        run: |
+          mkdir -p "$RUNNER_TEMP/cleanup"
+          cp scripts/cleanup-expired-sessions.mjs "$RUNNER_TEMP/cleanup/"
+          cd "$RUNNER_TEMP/cleanup"
+          npm init -y > /dev/null
+          npm install firebase-admin
+
+      - name: Run cleanup
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # 定期実行（schedule）は本削除。手動実行は dry_run 入力に従う
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        working-directory: ${{ runner.temp }}/cleanup
+        run: node cleanup-expired-sessions.mjs
