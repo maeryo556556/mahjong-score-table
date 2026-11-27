@@ -386,7 +386,7 @@ describe('createLiveSessionService', () => {
     expect(backend.create).not.toHaveBeenCalled();
   });
 
-  it('publishFinished: 参加者には終了状態で表示され、発行から48時間後は期限切れになる', async () => {
+  it('publishFinished: 参加者には終了状態で表示され、発行から48時間後は期限切れになる（内容は渡さない: Issue #108）', async () => {
     const { backend } = createMockBackend();
     let now = NOW;
     const service = createLiveSessionService(backend, { now: () => now, random: () => 0 });
@@ -404,7 +404,7 @@ describe('createLiveSessionService', () => {
     const lateEvents: JoinEvent[] = [];
     service.join(code, e => lateEvents.push(e));
     await flush();
-    expect(lateEvents[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'expired', game } });
+    expect(lateEvents).toEqual([{ type: 'expired' }]);
   });
 
   it('push / end: ドキュメントを更新する', async () => {
@@ -458,6 +458,165 @@ describe('createLiveSessionService', () => {
     unsubscribe();
     await service.push(code, game);
     expect(events).toHaveLength(3);
+  });
+
+  // ---------- 有効期限切れ（Issue #108） ----------
+
+  /** setTimeout の代わりに登録されたタイマーを記録し、テストから手動で発火させる */
+  const createManualTimers = () => {
+    const timers = new Map<number, { callback: () => void; delayMs: number }>();
+    let nextId = 1;
+    return {
+      timers,
+      setTimer: jest.fn((callback: () => void, delayMs: number) => {
+        const id = nextId++;
+        timers.set(id, { callback, delayMs });
+        return id;
+      }),
+      clearTimer: jest.fn((id: unknown) => {
+        timers.delete(id as number);
+      }),
+      fireAll: () => {
+        const pending = [...timers.values()];
+        timers.clear();
+        pending.forEach(t => t.callback());
+      },
+    };
+  };
+
+  it('join: 期限切れのセッションは内容を通知せず expired を通知し、購読を解除する', async () => {
+    const { backend, docs, listeners } = createMockBackend();
+    docs.set('123456', { ...buildSessionDoc(game, 'host', NOW - SESSION_TTL_MS - 1) });
+    const timers = createManualTimers();
+    const service = createLiveSessionService(backend, { now: () => NOW, ...timers });
+
+    const events: JoinEvent[] = [];
+    service.join('123456', e => events.push(e));
+    await flush();
+
+    expect(events).toEqual([{ type: 'expired' }]);
+    expect(listeners.get('123456')).toEqual([]);
+    expect(timers.timers.size).toBe(0);
+  });
+
+  it('join: ちょうど有効期限の時刻に参加した場合も期限切れ', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('123456', { ...buildSessionDoc(game, 'host', NOW - SESSION_TTL_MS) });
+    const service = createLiveSessionService(backend, { now: () => NOW, ...createManualTimers() });
+    const events: JoinEvent[] = [];
+    service.join('123456', e => events.push(e));
+    await flush();
+    expect(events).toEqual([{ type: 'expired' }]);
+  });
+
+  it('join: ホストが終了したセッションでも、期限切れなら expired（期限切れを優先）', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('123456', { ...buildSessionDoc(game, 'host', NOW - SESSION_TTL_MS, true) });
+    const service = createLiveSessionService(backend, { now: () => NOW, ...createManualTimers() });
+    const events: JoinEvent[] = [];
+    service.join('123456', e => events.push(e));
+    await flush();
+    expect(events).toEqual([{ type: 'expired' }]);
+  });
+
+  it('join: ホストが終了したセッションは、有効期限内なら内容を通知する', async () => {
+    const { backend, docs } = createMockBackend();
+    docs.set('123456', { ...buildSessionDoc(game, 'host', NOW - SESSION_TTL_MS + 1, true) });
+    const service = createLiveSessionService(backend, { now: () => NOW, ...createManualTimers() });
+    const events: JoinEvent[] = [];
+    service.join('123456', e => events.push(e));
+    await flush();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'ended', game } });
+  });
+
+  it('join: 閲覧中に有効期限を迎えたら、その時点で expired を通知して購読を終える', async () => {
+    const { backend, listeners } = createMockBackend();
+    let now = NOW;
+    const timers = createManualTimers();
+    const service = createLiveSessionService(backend, { now: () => now, random: () => 0, ...timers });
+    const { code, expiresAt } = await service.start(game);
+
+    const events: JoinEvent[] = [];
+    service.join(code, e => events.push(e));
+    await flush();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'snapshot', snapshot: { status: 'live' } });
+
+    // 有効期限の時刻に発火するタイマーが1つだけ登録される
+    expect(timers.timers.size).toBe(1);
+    expect([...timers.timers.values()][0].delayMs).toBe(expiresAt - NOW);
+
+    // 期限内の更新ではタイマーを登録し直さない
+    now = NOW + 1000;
+    await service.push(code, { ...game, d: '2026/11/25' });
+    expect(events).toHaveLength(2);
+    expect(timers.timers.size).toBe(1);
+
+    // 有効期限を迎える
+    now = expiresAt;
+    timers.fireAll();
+    expect(events).toHaveLength(3);
+    expect(events[2]).toEqual({ type: 'expired' });
+    expect(listeners.get(code)).toEqual([]);
+  });
+
+  it('join: 期限切れの通知後はイベントを通知しない', async () => {
+    const { backend, docs, listeners } = createMockBackend();
+    let now = NOW;
+    const timers = createManualTimers();
+    const service = createLiveSessionService(backend, { now: () => now, random: () => 0, ...timers });
+    const { code, expiresAt } = await service.start(game);
+    const events: JoinEvent[] = [];
+    service.join(code, e => events.push(e));
+    await flush();
+
+    now = expiresAt;
+    timers.fireAll();
+    // 購読が残っていても（解除前に届いた通知を想定）無視する
+    const onNext = backend.subscribe.mock.calls[0][1] as (doc: Record<string, unknown> | null) => void;
+    onNext({ ...docs.get(code)! });
+    onNext(null);
+    expect(events.map(e => e.type)).toEqual(['snapshot', 'expired']);
+    expect(listeners.get(code)).toEqual([]);
+  });
+
+  it('join: 期限前に購読を解除したら期限切れのタイマーも止める', async () => {
+    const { backend } = createMockBackend();
+    const timers = createManualTimers();
+    const service = createLiveSessionService(backend, { now: () => NOW, random: () => 0, ...timers });
+    const { code } = await service.start(game);
+    const events: JoinEvent[] = [];
+    const unsubscribe = service.join(code, e => events.push(e));
+    await flush();
+    expect(timers.timers.size).toBe(1);
+
+    unsubscribe();
+    expect(timers.timers.size).toBe(0);
+    expect(timers.clearTimer).toHaveBeenCalledTimes(1);
+    expect(events).toHaveLength(1);
+  });
+
+  it('join: 既定のタイマー（setTimeout）でも有効期限の到来を通知する', async () => {
+    jest.useFakeTimers({ now: NOW });
+    try {
+      const { backend, docs } = createMockBackend();
+      // 期限の1分前に発行から経過したセッション
+      docs.set('123456', { ...buildSessionDoc(game, 'host', NOW - SESSION_TTL_MS + 60_000) });
+      const service = createLiveSessionService(backend);
+      const events: JoinEvent[] = [];
+      service.join('123456', e => events.push(e));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(events.map(e => e.type)).toEqual(['snapshot']);
+
+      jest.advanceTimersByTime(59_999);
+      expect(events.map(e => e.type)).toEqual(['snapshot']);
+      jest.advanceTimersByTime(1);
+      expect(events.map(e => e.type)).toEqual(['snapshot', 'expired']);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('join: 存在しないコードは notFound', async () => {
@@ -587,7 +746,7 @@ describe('selectRejoinableSessions', () => {
 });
 
 describe('describeLiveViewer（Issue #72: 共有終了後も閲覧モードのまま表示）', () => {
-  it('どの状態でも閲覧モード（黄色の背景）で表示する', () => {
+  it('どの状態でも閲覧モード（黄色の背景）の枠組みで表示する', () => {
     for (const status of ['connecting', 'live', 'ended', 'expired'] as const) {
       expect(describeLiveViewer(status, null).liveMode).toBe(true);
     }
@@ -611,11 +770,13 @@ describe('describeLiveViewer（Issue #72: 共有終了後も閲覧モードの�
     expect(d.stopped).toBe(true);
   });
 
-  it('有効期限切れも閲覧モードの枠組みで表示し、同期は止まる', () => {
+  it('有効期限切れは最後の内容を表示し続けず、閲覧を終了することを伝える（Issue #108）', () => {
     const d = describeLiveViewer('expired', null);
-    expect(d.badge).toBe('閲覧モード');
+    expect(d.badgeActive).toBe(false);
     expect(d.title).toContain('有効期限切れ');
     expect(d.message).toContain('有効期限が切れました');
+    expect(d.message).toContain('閲覧を終了します');
+    expect(d.message).not.toContain('最後に受信した内容');
     expect(d.stopped).toBe(true);
   });
 

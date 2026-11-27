@@ -163,8 +163,47 @@ export default function GameScreen({
       ]);
       return true;
     };
+    // 有効期限切れ（Issue #108）: 内容は表示せず（閲覧中なら表示を消して）、期限切れを知らせて閲覧を終了する。
+    // 履歴への保存もできない。すでに保存済みの対局（端末内のコピー）はそちらを開ける
+    const handleExpired = () => {
+      try {
+        deleteJoinedSession(liveSessionCode);
+      } catch {
+        // 無視
+      }
+      const wasViewing = receivedData;
+      setLiveStatus('expired');
+      setLiveGame(null);
+      setLiveError(null);
+      setPlayers([]);
+      setGameStartDate('');
+      setScoreHistory([]);
+      setChipHistory([]);
+      const savedId = findSavedGameId(liveSessionCode);
+      if (!wasViewing && savedId !== null) {
+        // セッションを受信する前（コード入力・リンク）: 取り込み済みならエラーにせず保存済みの対局を開く（Issue #72）
+        openSavedGameInstead();
+        return;
+      }
+      const message = wasViewing
+        ? 'セッションの有効期限が切れたため、閲覧を終了します'
+        : `セッション「${liveSessionCode}」の有効期限が切れました。\n閲覧・保存はできません`;
+      Alert.alert(
+        '有効期限切れ',
+        savedId !== null ? `${message}\n保存済みの対局は過去のゲームから閲覧できます` : message,
+        savedId !== null
+          ? [
+              { text: '保存済みの対局を開く', onPress: () => onSavedLiveGame?.(savedId) },
+              { text: 'OK', onPress: onFinish },
+            ]
+          : [{ text: 'OK', onPress: onFinish }],
+        { cancelable: false }
+      );
+    };
     const unsubscribe = getLiveSessionService().join(liveSessionCode, (event) => {
-      if (event.type === 'snapshot') {
+      if (event.type === 'expired') {
+        handleExpired();
+      } else if (event.type === 'snapshot') {
         receivedData = true;
         const { snapshot } = event;
         const records = shareDataToRecords(snapshot.game);
@@ -178,12 +217,9 @@ export default function GameScreen({
         setScoreHistory(records.scores);
         setChipHistory(records.chips);
         // 参加したセッションを端末に記録し、戻った後も過去のゲーム一覧から再入室できるようにする（Issue #58）
+        // 期限切れのセッションは expired イベントになるので、ここに来るのは有効期限内のものだけ（Issue #108）
         try {
-          if (snapshot.status === 'expired') {
-            deleteJoinedSession(liveSessionCode);
-          } else {
-            saveJoinedSession(buildJoinedSession(liveSessionCode, snapshot, Date.now()));
-          }
+          saveJoinedSession(buildJoinedSession(liveSessionCode, snapshot, Date.now()));
         } catch {
           // 記録に失敗しても閲覧は続ける
         }
@@ -267,6 +303,12 @@ export default function GameScreen({
 
   const handleSaveLiveGame = () => {
     if (!liveGame || savedLiveGameId !== null) return;
+    // 有効期限切れのセッションは保存できない（Issue #108）。
+    // 期限到来の通知より先に操作された場合（バックグラウンド復帰直後など）もここで止める
+    if (liveStatus === 'expired' || (liveExpiresAt !== null && Date.now() >= liveExpiresAt)) {
+      Alert.alert('有効期限切れ', 'セッションの有効期限が切れたため、履歴に保存できません');
+      return;
+    }
     // 別の画面などで既に保存していた場合は二重に保存しない（Issue #72）
     const alreadySavedId = liveSessionCode ? findSavedGameId(liveSessionCode) : null;
     if (alreadySavedId !== null) {
@@ -570,7 +612,8 @@ export default function GameScreen({
   };
 
   // 閲覧モード（Issue #53, #58）: ゲストの閲覧中だけ背景を黄色基調にする。ホストの共有中は通常の配色
-  // Issue #72: ホストが共有を終了した後・有効期限切れの後も閲覧モード（黄色）のまま表示する
+  // Issue #72: ホストが共有を終了した後も閲覧モード（黄色）のまま表示する
+  // Issue #108: 有効期限切れの後は内容を表示しない（liveGame を消して閲覧を終了する）
   const liveViewer = describeLiveViewer(liveStatus, liveExpiresAt ? formatExpiresAt(liveExpiresAt) : null);
   const isLiveMode = isLiveViewer && liveViewer.liveMode;
   // ゲスト: 最初のデータを受け取るまでは総合スコア・記録履歴も表示しない（Issue #58）

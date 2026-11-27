@@ -174,7 +174,13 @@ export interface SessionBackend {
 }
 
 export type JoinEvent =
+  /** 有効期限内のセッションの内容（status は live / ended のみ） */
   | { type: 'snapshot'; snapshot: LiveSessionSnapshot }
+  /**
+   * セッションの有効期限が切れた（Issue #108）。参加時点で切れていた場合も、閲覧中に期限を迎えた場合も通知する。
+   * 期限切れのセッションの内容は渡さない。通知後は購読を自動で解除し、以降のイベントは通知しない
+   */
+  | { type: 'expired' }
   | { type: 'notFound' }
   | { type: 'error'; error: Error };
 
@@ -190,17 +196,30 @@ export interface LiveSessionService {
   push(code: string, game: ShareGameData): Promise<void>;
   /** セッションを終了状態にする */
   end(code: string): Promise<void>;
-  /** 参加者としてセッションを購読する。戻り値は購読解除関数 */
+  /**
+   * 参加者としてセッションを購読する。戻り値は購読解除関数。
+   * 有効期限切れのセッションは内容を通知せず expired を通知する。閲覧中に期限を迎えた場合も
+   * その時点で expired を通知して購読を終える（Issue #108）
+   */
   join(code: string, onEvent: (event: JoinEvent) => void): () => void;
 }
 
 export const createLiveSessionService = (
   backend: SessionBackend,
-  options: { now?: () => number; random?: () => number; maxAttempts?: number } = {}
+  options: {
+    now?: () => number;
+    random?: () => number;
+    maxAttempts?: number;
+    /** 有効期限の到来を知るためのタイマー（テストで差し替える） */
+    setTimer?: (callback: () => void, delayMs: number) => unknown;
+    clearTimer?: (timer: unknown) => void;
+  } = {}
 ): LiveSessionService => {
   const now = options.now ?? Date.now;
   const random = options.random ?? Math.random;
   const maxAttempts = options.maxAttempts ?? 5;
+  const setTimer = options.setTimer ?? ((callback: () => void, delayMs: number) => setTimeout(callback, delayMs));
+  const clearTimer = options.clearTimer ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
 
   const issue = async (game: ShareGameData, ended: boolean) => {
     const uid = await backend.getUid();
@@ -236,32 +255,67 @@ export const createLiveSessionService = (
     join(code, onEvent) {
       let unsubscribe: (() => void) | null = null;
       let cancelled = false;
+      let expiryTimer: unknown = null;
+      let expiryAt: number | null = null;
+
+      const stop = () => {
+        cancelled = true;
+        if (expiryTimer !== null) clearTimer(expiryTimer);
+        expiryTimer = null;
+        unsubscribe?.();
+        unsubscribe = null;
+      };
+      // 期限切れを通知して購読を終える（以降のイベントは通知しない）
+      const expire = () => {
+        if (cancelled) return;
+        stop();
+        onEvent({ type: 'expired' });
+      };
+      // 閲覧中に有効期限を迎えたら、その時点で期限切れを通知する
+      const scheduleExpiry = (expiresAt: number) => {
+        if (expiryAt === expiresAt && expiryTimer !== null) return;
+        if (expiryTimer !== null) clearTimer(expiryTimer);
+        expiryAt = expiresAt;
+        expiryTimer = setTimer(() => {
+          expiryTimer = null;
+          expire();
+        }, Math.max(0, expiresAt - now()));
+      };
+
       backend.getUid().then(() => {
         if (cancelled) return;
-        unsubscribe = backend.subscribe(
+        const unsub = backend.subscribe(
           code,
           (raw) => {
+            if (cancelled) return;
             if (raw === null) {
               onEvent({ type: 'notFound' });
               return;
             }
             const snapshot = parseSessionDoc(raw, now());
-            if (snapshot) {
-              onEvent({ type: 'snapshot', snapshot });
-            } else {
+            if (!snapshot) {
               onEvent({ type: 'error', error: new Error('セッションのデータ形式が正しくありません') });
+            } else if (snapshot.status === 'expired') {
+              // 期限切れのセッションは内容を渡さない（終了済みでも期限切れを優先する）
+              expire();
+            } else {
+              onEvent({ type: 'snapshot', snapshot });
+              scheduleExpiry(snapshot.expiresAt);
             }
           },
-          (error) => onEvent({ type: 'error', error })
+          (error) => {
+            if (cancelled) return;
+            onEvent({ type: 'error', error });
+          }
         );
+        // 購読開始と同時に期限切れを通知して終えていた場合は、すぐ購読を解除する
+        if (cancelled) unsub();
+        else unsubscribe = unsub;
       }).catch((error: unknown) => {
         if (cancelled) return;
         onEvent({ type: 'error', error: error instanceof Error ? error : new Error(String(error)) });
       });
-      return () => {
-        cancelled = true;
-        unsubscribe?.();
-      };
+      return stop;
     },
   };
 };
@@ -316,7 +370,7 @@ export const selectRejoinableSessions = (
 export type LiveViewerStatus = 'connecting' | LiveSessionStatus;
 
 export interface LiveViewerDisplay {
-  /** 閲覧モード（黄色基調）で表示するか。ゲストの閲覧中は共有終了・期限切れ後もそのまま */
+  /** 閲覧モード（黄色基調）で表示するか。ゲストの閲覧中は共有終了後もそのまま */
   liveMode: boolean;
   /** ヘッダー右のバッジ */
   badge: string;
@@ -332,8 +386,9 @@ export interface LiveViewerDisplay {
 
 /**
  * ゲストの閲覧画面（ヘッダーのバッジ・閲覧バナー）に出す内容を決める。
- * ホストが共有を終了した後や有効期限が切れた後も閲覧モード（黄色の背景）のまま表示し、
+ * ホストが共有を終了した後も閲覧モード（黄色の背景）のまま表示し、
  * バナーで同期が止まったことを伝える（Issue #72）。
+ * 有効期限が切れた場合は最後の内容も表示せず、期限切れを伝えて閲覧を終了する（Issue #108）。
  */
 export const describeLiveViewer = (status: LiveViewerStatus, expiresAtText: string | null): LiveViewerDisplay => {
   switch (status) {
@@ -362,8 +417,9 @@ export const describeLiveViewer = (status: LiveViewerStatus, expiresAtText: stri
         liveMode: true,
         badge: '閲覧モード',
         badgeActive: false,
-        title: '閲覧中（有効期限切れ）',
-        message: 'セッションの有効期限が切れました\n表示は最後に受信した内容です（以降は更新されません）',
+        title: '有効期限切れ',
+        // 期限切れ後は最後の内容も表示せず、閲覧を終了する（Issue #108）
+        message: 'セッションの有効期限が切れました\n閲覧を終了します',
         stopped: true,
       };
   }
