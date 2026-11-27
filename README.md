@@ -257,6 +257,16 @@ SetupScreen（初期画面）
 - CASCADE削除で整合性を保証
 - マイグレーション対応（finishedカラムの追加）
 
+### 10. 期限切れセッションの掃除
+リアルタイム共有のセッション（Firestore `sessions/{code}`）は作成から48時間で期限切れになるが、Firebase は無料の Spark プランのため TTL ポリシーによる自動削除が使えない。そこで GitHub Actions で定期的に掃除する（Issue #102）。
+
+- スクリプト: `scripts/cleanup-expired-sessions.mjs`（`expiresAt` が実行時刻より前の文書だけを500件ずつバッチ削除。`expiresAt` が未来の文書には触らない）
+- ワークフロー: `.github/workflows/cleanup-expired-sessions.yml`
+  - **毎月1日 03:00 UTC に自動実行**（本削除）
+  - Actions 画面の「Run workflow」から**手動実行も可能**。`dry_run`（デフォルト true）にチェックが入っていれば削除せず、対象件数と対象コード一覧をログに出すだけ
+- **必要な GitHub Secrets**: `FIREBASE_SERVICE_ACCOUNT` … Firebase サービスアカウントキー（JSON の中身をそのまま登録）
+  - Firebase コンソール → プロジェクトの設定 → サービスアカウント →「新しい秘密鍵を生成」で取得し、リポジトリの Settings → Secrets and variables → Actions に登録する
+
 ## バリデーション
 
 ### プレイヤー名
