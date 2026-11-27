@@ -2,7 +2,7 @@
   "expo": {
     "name": "麻雀スコアシートモバイル",
     "slug": "mahjong-score-tracker",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "scheme": "mahjong-score",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
