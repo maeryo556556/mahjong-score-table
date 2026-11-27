@@ -283,6 +283,32 @@ SetupScreen（初期画面）
 - 合計が±0でない場合は記録不可
 - 範囲: -200 〜 +200
 
+## テスト
+
+jest で 2 種類のテストを実行します（設定は `jest.config.js` の `projects`）。
+
+| プロジェクト | 対象 | 環境 |
+| --- | --- | --- |
+| `unit` | `__tests__/**/*.test.ts`（ユーティリティ・ディープリンク・ライブ共有などのロジック） | ts-jest / node |
+| `components` | `__tests__/**/*.test.tsx`（画面操作のテスト） | jest-expo / React Native Testing Library |
+
+```bash
+# すべてのテスト
+npm test
+
+# ロジックのテストのみ
+npm run test:unit
+
+# 画面操作（コンポーネント）のテストのみ
+npm run test:components
+```
+
+画面操作のテストでは、ネイティブ／外部依存を `jest.setup.components.ts` でモックしています。
+
+- `expo-sqlite`: `__tests__/support/sqliteMock.ts` で sql.js（純 JS 版 SQLite）のインメモリ DB に置き換え、`database.ts` の SQL をそのまま実行します。DB はテストごとに空に戻ります。
+- `firebase.ts`（リアルタイム共有）: 通信しないモックに置き換えます。
+- `react-native-safe-area-context`: ライブラリ同梱の jest 用モックを使います。
+
 ## ビルド
 
 ### Android APKビルド
