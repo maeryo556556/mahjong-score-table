@@ -3,7 +3,7 @@
 ## 1. 文書情報
 
 - 対象アプリ: 麻雀スコアシートモバイル
-- 対象バージョン: `package.json` の `1.1.3`
+- 対象バージョン: `package.json` の `1.1.4`
 - 対象プラットフォーム: Expo / React Native による iOS、Android、Web
 - 参照元: `README.md`、`app/`、`screens/`、`components/`、`database.ts`、`utils.ts`、`liveSession.ts`、`firebase.ts`、`firestore.rules`、`__tests__/`
 
